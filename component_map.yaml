@@ -1,0 +1,72 @@
+# Component map for gate/ensure feature
+# Shows which files change and how they relate
+
+version: "1.0"
+generated_by: constrain
+feature: gate-ensure-actions
+
+components:
+  - name: policy.rs
+    description: Policy engine - rule evaluation, condition functions, validation
+    changes:
+      - "Add Gate and Ensure variants to Decision enum"
+      - "Add GateConfig and EnsureConfig structs"
+      - "Add optional gate/ensure fields to PolicyRule"
+      - "Extend evaluate() to handle gate (log query) and ensure (script execution)"
+      - "Extend validate_policy() for new action types"
+      - "Add protect_checks_dir to self_protection_rules() as first rule"
+      - "Add checks_dir() helper to resolve ~/.signet/checks/"
+    constraints: [C001, C002, C003, C004, C005, C006, C008, C009]
+
+  - name: hook.rs
+    description: Hook I/O - stdin/stdout JSON, vault logging
+    changes:
+      - "Map Gate/Ensure decisions to deny with reason in hook output"
+      - "Ensure checks directory protection survives pause mode"
+      - "Capture and relay ensure script stderr in deny reason"
+    constraints: [C002, C005, C010]
+
+  - name: vault.rs
+    description: Encrypted vault, action ledger, credentials
+    changes:
+      - "Add recent_actions_matching() method for gate log queries"
+      - "Query filters: within N entries, decision=allow, detail contains string"
+    constraints: [C007, C008]
+
+  - name: mcp_server.rs
+    description: MCP management server - 17 tools for policy editing
+    changes:
+      - "signet_add_rule: accept gate/ensure config"
+      - "signet_edit_rule: accept gate/ensure config"
+      - "signet_list_rules: display gate/ensure config"
+      - "signet_condition_help: document new action types"
+      - "Guard: reject ensure rules with invalid script names"
+    constraints: [C005, C012]
+
+  - name: main.rs
+    description: CLI entry point
+    changes:
+      - "signet-eval test: display gate/ensure evaluation details"
+      - "signet-eval rules: show gate/ensure config"
+    constraints: []
+
+  - name: checks/gh-identity-matches-remote
+    description: Shell script - validates GitHub identity matches git remote
+    location: "~/.signet/checks/gh-identity-matches-remote"
+    changes:
+      - "New file: check script for GitHub identity validation"
+    constraints: [C011]
+
+edges:
+  - from: hook.rs
+    to: policy.rs
+    relationship: "calls evaluate() which now returns Gate/Ensure decisions"
+  - from: policy.rs
+    to: vault.rs
+    relationship: "gate action queries recent_actions_matching()"
+  - from: policy.rs
+    to: "~/.signet/checks/"
+    relationship: "ensure action spawns scripts from this directory"
+  - from: mcp_server.rs
+    to: policy.rs
+    relationship: "CRUD operations on rules with gate/ensure config"

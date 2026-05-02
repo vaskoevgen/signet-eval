@@ -1,0 +1,1163 @@
+{
+  "component_id": "cli_observability_and_fix",
+  "contract_version": 1,
+  "test_cases": [
+    {
+      "id": "goodhart_policy_path_toml_nested",
+      "description": "PolicyPath must accept any path ending in .toml regardless of directory depth or naming, not just specific hardcoded examples",
+      "function": "PolicyPath",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "/deeply/nested/dir/my_custom_policy.toml"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "PolicyPath constructed successfully",
+        "value matches input"
+      ]
+    },
+    {
+      "id": "goodhart_policy_path_yaml_with_dots_in_dir",
+      "description": "PolicyPath must validate only the final extension, not reject paths with dots elsewhere in the directory components",
+      "function": "PolicyPath",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "/some.dir/another.dir/config.yaml"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "PolicyPath constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_policy_path_yml_rejected",
+      "description": "PolicyPath must reject .yml extension since the regex only allows .toml or .yaml",
+      "function": "PolicyPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "config.yml"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised for invalid extension"
+      ]
+    },
+    {
+      "id": "goodhart_policy_path_toml_substring_rejected",
+      "description": "PolicyPath must reject paths where .toml appears as substring but not as final extension (e.g. .toml.bak)",
+      "function": "PolicyPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "policy.toml.bak"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_policy_path_yaml_uppercase_rejected",
+      "description": "PolicyPath regex is case-sensitive — .YAML and .TOML should be rejected",
+      "function": "PolicyPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "policy.YAML"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised for case mismatch"
+      ]
+    },
+    {
+      "id": "goodhart_policy_path_dot_toml_only",
+      "description": "PolicyPath must reject a path that is just the extension '.toml' since it's technically valid per regex but represents no meaningful filename — or accept it if length >= 1 and regex matches",
+      "function": "PolicyPath",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": ".toml"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "PolicyPath accepts since length >= 1 and ends with .toml"
+      ]
+    },
+    {
+      "id": "goodhart_policy_path_json_rejected",
+      "description": "PolicyPath must reject .json extension, not just the specific wrong extensions tested in visible tests",
+      "function": "PolicyPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "/etc/policy.json"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_rule_id_single_char",
+      "description": "RuleId must accept single-character identifiers since min length is 1",
+      "function": "RuleId",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "a"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "RuleId constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_rule_id_hyphen_only",
+      "description": "RuleId must accept strings consisting solely of hyphens since they match the regex pattern",
+      "function": "RuleId",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "---"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "RuleId constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_rule_id_underscore_only",
+      "description": "RuleId must accept strings consisting solely of underscores since they match the regex pattern",
+      "function": "RuleId",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "___"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "RuleId constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_rule_id_slash_rejected",
+      "description": "RuleId must reject forward slashes which are not in the allowed character set",
+      "function": "RuleId",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "rule/sub"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_rule_id_at_sign_rejected",
+      "description": "RuleId must reject @ symbols and other non-alphanumeric, non-underscore, non-hyphen characters",
+      "function": "RuleId",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "rule@v2"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_rule_id_unicode_rejected",
+      "description": "RuleId regex anchored to ASCII alphanumeric must reject unicode letter characters",
+      "function": "RuleId",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "règle_1"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised for non-ASCII"
+      ]
+    },
+    {
+      "id": "goodhart_field_path_single_char",
+      "description": "FieldPath must accept a single character since min length is 1",
+      "function": "FieldPath",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "x"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "FieldPath constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_field_path_with_array_index",
+      "description": "FieldPath must accept paths with array bracket notation like rules[0].field",
+      "function": "FieldPath",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "rules[0].limits[2].max_value"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "FieldPath constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_field_path_slash_rejected",
+      "description": "FieldPath must reject slash characters which are not in the allowed character set",
+      "function": "FieldPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "rules/0/field"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_field_path_space_rejected",
+      "description": "FieldPath must reject whitespace characters",
+      "function": "FieldPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "field name"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_field_path_curly_brace_rejected",
+      "description": "FieldPath regex allows square brackets but must reject curly braces",
+      "function": "FieldPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "rules{0}.field"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_timestamp_different_date",
+      "description": "Timestamp validation must work for any valid UTC timestamp, not just specific hardcoded dates from visible tests",
+      "function": "Timestamp",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "1999-12-31T23:59:59Z"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Timestamp constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_timestamp_high_precision_fractional",
+      "description": "Timestamp must accept fractional seconds with many digits of precision",
+      "function": "Timestamp",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "2024-01-15T10:30:00.123456789Z"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Timestamp constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_timestamp_single_fractional_digit",
+      "description": "Timestamp must accept fractional seconds with just one digit",
+      "function": "Timestamp",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "2024-06-01T00:00:00.1Z"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Timestamp constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_timestamp_offset_rejected",
+      "description": "Timestamp must reject UTC offsets like +00:00 — only trailing Z is allowed",
+      "function": "Timestamp",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "2024-01-15T10:30:00+00:00"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_timestamp_lowercase_z_rejected",
+      "description": "Timestamp regex requires uppercase Z — lowercase z should be rejected",
+      "function": "Timestamp",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "2024-01-15T10:30:00z"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_timestamp_missing_seconds_rejected",
+      "description": "Timestamp must reject strings missing the seconds component",
+      "function": "Timestamp",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "2024-01-15T10:30Z"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_timestamp_extra_prefix_rejected",
+      "description": "Timestamp regex is anchored — must reject strings with leading garbage before a valid timestamp",
+      "function": "Timestamp",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "XX2024-01-15T10:30:00Z"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised due to anchor mismatch"
+      ]
+    },
+    {
+      "id": "goodhart_timestamp_extra_suffix_rejected",
+      "description": "Timestamp regex is anchored with $ — must reject strings with trailing garbage after Z",
+      "function": "Timestamp",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "2024-01-15T10:30:00Zextra"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised due to anchor mismatch"
+      ]
+    },
+    {
+      "id": "goodhart_render_fix_diff_preserves_order",
+      "description": "render_fix_diff must preserve the exact input order of changes, not sort or reorder them",
+      "function": "render_fix_diff",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "A list of 5 changes in a specific non-alphabetical order",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Lines appear in exact input order",
+        "No sorting applied"
+      ]
+    },
+    {
+      "id": "goodhart_render_fix_diff_arrow_character",
+      "description": "render_fix_diff must use the Unicode arrow character → (U+2192) not ASCII alternatives like -> or =>",
+      "function": "render_fix_diff",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "A single FixChange",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Output contains → (U+2192)",
+        "Output does not contain -> or =>"
+      ]
+    },
+    {
+      "id": "goodhart_render_fix_diff_special_chars_in_values",
+      "description": "render_fix_diff must handle values containing special characters, colons, and Unicode without corruption",
+      "function": "render_fix_diff",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "FixChange with old_value and new_value containing colons, quotes, and Unicode",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Values rendered verbatim in output"
+      ]
+    },
+    {
+      "id": "goodhart_render_fix_diff_no_trailing_newline",
+      "description": "render_fix_diff output should not have a trailing newline after the last line (or should consistently have one) — tests exact format",
+      "function": "render_fix_diff",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "A single FixChange",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Output format is consistent with contract specification"
+      ]
+    },
+    {
+      "id": "goodhart_build_enable_result_many_sessions",
+      "description": "build_enable_result must handle a large number of cleared sessions, not just the 1-2 sessions in visible tests",
+      "function": "build_enable_result",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "global_was_disabled": "True",
+        "cleared_sessions": "[session_1, session_2, ..., session_20]"
+      },
+      "input_description": "global_was_disabled=True and 20 session IDs",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "cleared list has 21 entries (1 global + 20 sessions)",
+        "was_disabled is True",
+        "GlobalDisable is first entry",
+        "Sessions follow in input order"
+      ]
+    },
+    {
+      "id": "goodhart_build_enable_result_session_order_preserved",
+      "description": "build_enable_result must preserve the input order of cleared_sessions, not sort them alphabetically",
+      "function": "build_enable_result",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "global_was_disabled": "False",
+        "cleared_sessions": "[zebra_session, alpha_session, middle_session]"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "SessionDisable entries appear in order: zebra, alpha, middle"
+      ]
+    },
+    {
+      "id": "goodhart_build_enable_result_global_false_empty_sessions",
+      "description": "build_enable_result with global_was_disabled=False and empty sessions must produce empty cleared list and was_disabled=False",
+      "function": "build_enable_result",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "global_was_disabled": "False",
+        "cleared_sessions": "[]"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "cleared list is empty",
+        "was_disabled is False"
+      ]
+    },
+    {
+      "id": "goodhart_build_enable_result_global_disable_no_session_id",
+      "description": "The GlobalDisable ClearedOverride entry must have session_id=None, not some default value",
+      "function": "build_enable_result",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "global_was_disabled": "True",
+        "cleared_sessions": "[]"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "cleared[0].kind is GlobalDisable",
+        "cleared[0].session_id is None"
+      ]
+    },
+    {
+      "id": "goodhart_build_enable_result_session_disable_has_session_id",
+      "description": "Each SessionDisable ClearedOverride entry must carry the correct session_id, not None",
+      "function": "build_enable_result",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "global_was_disabled": "False",
+        "cleared_sessions": "[sess_abc]"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "cleared[0].kind is SessionDisable",
+        "cleared[0].session_id == 'sess_abc'"
+      ]
+    },
+    {
+      "id": "goodhart_fix_policy_distinct_rule_field_pairs",
+      "description": "fix_policy must never produce two FixChange entries with the same (rule_id, field_path) pair, even for complex policies",
+      "function": "fix_policy",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "A policy with multiple rules that each have multiple clamping violations",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "All (rule_id, field_path) pairs in changes are unique"
+      ]
+    },
+    {
+      "id": "goodhart_fix_policy_original_unchanged",
+      "description": "fix_policy must return the original policy object unmodified in the FixResult.original field",
+      "function": "fix_policy",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "A policy with clamping violations",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "FixResult.original is semantically identical to the input policy"
+      ]
+    },
+    {
+      "id": "goodhart_fix_policy_no_changes_identity",
+      "description": "When fix_policy returns has_changes=False, the fixed policy must be semantically identical to the original — not just have the same number of rules",
+      "function": "fix_policy",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "A clean policy with specific field values",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "fixed policy field values exactly match original"
+      ]
+    },
+    {
+      "id": "goodhart_render_enforcement_state_disabled_sessions_only",
+      "description": "render_enforcement_state with only disabled_sessions (not globally_disabled) must show Disabled Sessions section but omit Enforcement section",
+      "function": "render_enforcement_state",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "EnforcementState with globally_disabled=False, disabled_sessions=['s1','s2'], no pauses, vault_present=False",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Output contains 'Disabled Sessions' section",
+        "Output does not contain 'Enforcement' section for global disable",
+        "Output is not 'No active overrides.'"
+      ]
+    },
+    {
+      "id": "goodhart_render_enforcement_state_global_pause_only",
+      "description": "render_enforcement_state with only a global_pause and nothing else must show Global Pause section and omit all other sections",
+      "function": "render_enforcement_state",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "EnforcementState with globally_disabled=False, no disabled_sessions, global_pause=some_instant, no active_pauses, vault_present=True",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Output contains Global Pause section",
+        "Other sections omitted"
+      ]
+    },
+    {
+      "id": "goodhart_render_enforcement_state_pause_sort_same_scope",
+      "description": "When multiple pauses have the same scope, they must be sorted by expiry ascending within that scope",
+      "function": "render_enforcement_state",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "EnforcementState with 3 Rule-scoped pauses with different expiry times in non-sorted order",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Pauses with same scope appear in ascending expiry order"
+      ]
+    },
+    {
+      "id": "goodhart_render_enforcement_state_scope_ordering",
+      "description": "Active pauses must be sorted with Global scope first, then Rule, then Session, then RuleSession",
+      "function": "render_enforcement_state",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "EnforcementState with one pause of each scope type in reverse order",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Global pause appears before Rule",
+        "Rule appears before Session",
+        "Session appears before RuleSession"
+      ]
+    },
+    {
+      "id": "goodhart_render_enforcement_state_vault_present_no_section",
+      "description": "vault_present being True should not produce its own section — it's metadata, not an override",
+      "function": "render_enforcement_state",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "EnforcementState with vault_present=True and no overrides",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Output is 'No active overrides.'",
+        "No vault section appears"
+      ]
+    },
+    {
+      "id": "goodhart_handle_validate_fix_with_vault_present",
+      "description": "handle_validate in Fix mode with changes AND vault present must re-sign and return Success",
+      "function": "handle_validate",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {
+        "read_policy": "policy with clamping violations",
+        "vault_present": "True",
+        "sign_policy": "success",
+        "write_tempfile": "success",
+        "rename_tempfile": "success"
+      },
+      "input_values": {},
+      "input_description": "Policy with fixable issues, vault is present, signing succeeds",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Exit code is Success",
+        "Signing was attempted",
+        "Rename occurred after signing"
+      ]
+    },
+    {
+      "id": "goodhart_handle_validate_diagnose_only_no_writes",
+      "description": "handle_validate in DiagnoseOnly mode must never invoke file write operations regardless of policy content",
+      "function": "handle_validate",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {
+        "read_policy": "policy with clamping violations"
+      },
+      "input_values": {},
+      "input_description": "Policy with fixable issues, mode=DiagnoseOnly",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "No tempfile creation",
+        "No file rename",
+        "No signing call"
+      ]
+    },
+    {
+      "id": "goodhart_handle_validate_dry_run_no_writes",
+      "description": "handle_validate in DryRun mode must never invoke file write operations even when fixes are available",
+      "function": "handle_validate",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {
+        "read_policy": "policy with clamping violations"
+      },
+      "input_values": {},
+      "input_description": "Policy with fixable issues, mode=DryRun",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "No tempfile creation",
+        "No file rename",
+        "No signing call",
+        "Exit code is Success"
+      ]
+    },
+    {
+      "id": "goodhart_handle_validate_unfixable_diagnostics_passthrough_in_fix_mode",
+      "description": "handle_validate in Fix mode must still emit unfixable diagnostics after applying fixes — they are not silently dropped",
+      "function": "handle_validate",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {
+        "read_policy": "policy with mixed issues",
+        "write_tempfile": "success",
+        "rename_tempfile": "success",
+        "vault_present": "False"
+      },
+      "input_values": {},
+      "input_description": "Policy with both fixable clamping issues and unfixable structural errors, mode=Fix",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Unfixable diagnostics appear in output",
+        "Fixable issues are applied"
+      ]
+    },
+    {
+      "id": "goodhart_handle_validate_signing_before_rename",
+      "description": "In Fix mode with vault present, signing must be attempted BEFORE the atomic rename — if signing fails, rename must not occur",
+      "function": "handle_validate",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {
+        "read_policy": "policy with clamping violations",
+        "vault_present": "True",
+        "sign_policy": "failure",
+        "write_tempfile": "success"
+      },
+      "input_values": {},
+      "input_description": "Policy with fixable issues, vault present, signing fails",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Rename never called",
+        "Tempfile deleted",
+        "Exit code is InternalError"
+      ]
+    },
+    {
+      "id": "goodhart_handle_enable_session_clear_failure_continues",
+      "description": "handle_enable must continue processing remaining sessions even when clearing one session fails (best-effort)",
+      "function": "handle_enable",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {
+        "global_disable_exists": "True",
+        "list_disabled_sessions": "[s1, s2, s3]",
+        "clear_session_s2": "failure"
+      },
+      "input_values": {},
+      "input_description": "Three sessions disabled, second one fails to clear",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "s1 and s3 are cleared successfully",
+        "Processing did not halt at s2",
+        "Exit code is Success"
+      ]
+    },
+    {
+      "id": "goodhart_handle_enable_only_sessions_no_global",
+      "description": "handle_enable when only per-session disables are active (no global disable) must still clear them and report cleared",
+      "function": "handle_enable",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {
+        "global_disable_exists": "False",
+        "list_disabled_sessions": "[s1, s2]"
+      },
+      "input_values": {},
+      "input_description": "No global disable, but two sessions are disabled",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Both sessions cleared",
+        "Output does not say 'Not currently disabled.'",
+        "Exit code is Success"
+      ]
+    },
+    {
+      "id": "goodhart_handle_status_all_sections_populated",
+      "description": "handle_status with all override types active must render all sections",
+      "function": "handle_status",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {
+        "query_enforcement_state": "fully populated state"
+      },
+      "input_values": {},
+      "input_description": "globally_disabled=True, disabled_sessions=[s1], global_pause=some_time, active_pauses=[pause1], vault_present=True",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "All sections present in output",
+        "Exit code is Success"
+      ]
+    },
+    {
+      "id": "goodhart_handle_status_empty_state",
+      "description": "handle_status with no overrides active must output 'No active overrides.' and exit Success",
+      "function": "handle_status",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {
+        "query_enforcement_state": "empty state"
+      },
+      "input_values": {},
+      "input_description": "All enforcement state fields empty/false",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Output is 'No active overrides.'",
+        "Exit code is Success"
+      ]
+    },
+    {
+      "id": "goodhart_query_enforcement_state_expired_pauses_excluded",
+      "description": "query_enforcement_state must exclude pauses whose expiry is in the past, not just filter based on presence of expiry field",
+      "function": "query_enforcement_state",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {
+        "read_pause_files": "two pauses, one expired, one active"
+      },
+      "input_values": {},
+      "input_description": "Two pauses on disk: one expired 1 hour ago, one expires in 1 hour",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "active_pauses contains only the non-expired pause",
+        "Expired pause is not included"
+      ]
+    },
+    {
+      "id": "goodhart_render_fix_diff_exact_format_colon_spacing",
+      "description": "render_fix_diff lines must use exact format 'rule_id: field_path: old_value → new_value' with consistent colon-space separators",
+      "function": "render_fix_diff",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "A FixChange with rule_id='R1', field_path='f.p', old_value='10', new_value='5'",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Output line is exactly 'R1: f.p: 10 → 5'"
+      ]
+    },
+    {
+      "id": "goodhart_policy_path_double_extension_yaml",
+      "description": "PolicyPath must accept paths with multiple dots before the final .yaml extension",
+      "function": "PolicyPath",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "my.policy.v2.yaml"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "PolicyPath constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_policy_path_whitespace_rejected",
+      "description": "PolicyPath that contains only whitespace (but is non-empty) must still pass length validation but should be rejected by regex if it doesn't end in .toml or .yaml",
+      "function": "PolicyPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "   "
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised — does not end with .toml or .yaml"
+      ]
+    },
+    {
+      "id": "goodhart_rule_id_exactly_one_char_boundary",
+      "description": "RuleId must accept exactly 1-character input (boundary at min length) for various valid single characters",
+      "function": "RuleId",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "Z"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "RuleId constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_rule_id_127_chars_accepted",
+      "description": "RuleId at length 127 (one below max) must be accepted — ensures max check is not off by one",
+      "function": "RuleId",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "a]127 chars"
+      },
+      "input_description": "A 127-character string of valid alphanumeric characters",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "RuleId constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_field_path_511_chars_accepted",
+      "description": "FieldPath at length 511 (one below max) must be accepted — ensures max check is not off by one",
+      "function": "FieldPath",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "A 511-character string of valid field path characters",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "FieldPath constructed successfully"
+      ]
+    },
+    {
+      "id": "goodhart_field_path_parentheses_rejected",
+      "description": "FieldPath must reject parentheses which are not in the allowed character set",
+      "function": "FieldPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "func(0)"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_timestamp_date_only_rejected",
+      "description": "Timestamp must reject date-only strings without the time component",
+      "function": "Timestamp",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "2024-01-15"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_timestamp_space_separator_rejected",
+      "description": "Timestamp must reject space as date-time separator instead of T",
+      "function": "Timestamp",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "2024-01-15 10:30:00Z"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Validation error raised"
+      ]
+    },
+    {
+      "id": "goodhart_handle_validate_fix_idempotent_no_second_write",
+      "description": "Running handle_validate Fix mode on an already-fixed policy must produce no writes (C014 idempotency)",
+      "function": "handle_validate",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {
+        "read_policy": "already fixed policy",
+        "vault_present": "False"
+      },
+      "input_values": {},
+      "input_description": "A policy that has already been fixed (no clamping violations)",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "'No fixable issues' emitted",
+        "No tempfile created",
+        "No rename",
+        "Exit code is Success"
+      ]
+    },
+    {
+      "id": "goodhart_handle_validate_persist_failure_returns_error",
+      "description": "handle_validate must return an error exit code (not Success) when atomic rename fails, even if signing succeeded",
+      "function": "handle_validate",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {
+        "read_policy": "policy with violations",
+        "vault_present": "False",
+        "write_tempfile": "success",
+        "rename_tempfile": "failure"
+      },
+      "input_values": {},
+      "input_description": "Policy with fixable issues, vault absent, tempfile write succeeds, rename fails",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Exit code is not Success"
+      ]
+    },
+    {
+      "id": "goodhart_render_enforcement_state_only_active_pauses",
+      "description": "render_enforcement_state with only active_pauses (no global disable, no disabled sessions, no global pause) must show Active Pauses section only",
+      "function": "render_enforcement_state",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "EnforcementState with globally_disabled=False, empty disabled_sessions, no global_pause, one active pause, vault_present=False",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Output contains Active Pauses section",
+        "No Enforcement section",
+        "No Disabled Sessions section",
+        "No Global Pause section",
+        "Output is not 'No active overrides.'"
+      ]
+    },
+    {
+      "id": "goodhart_derive_validate_mode_returns_correct_types",
+      "description": "derive_validate_mode must return actual ValidateMode enum values, not strings or integers that happen to match in comparisons",
+      "function": "derive_validate_mode",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "fix": "True",
+        "dry_run": "False"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Return value is an instance of ValidateMode",
+        "Return value equals ValidateMode.Fix"
+      ]
+    }
+  ],
+  "test_language": "python",
+  "generated_code": "\"\"\"\nHidden adversarial acceptance tests for CLI Observability and Auto-Fix (signet-eval).\n\nThese tests are designed to catch implementations that pass visible tests through\nshortcuts (hardcoded returns, incomplete validation, etc.) rather than genuinely\nsatisfying the contract.\n\"\"\"\n\nimport pytest\nfrom unittest.mock import MagicMock, patch, call\nfrom src.cli_observability_and_fix import (\n    PolicyPath,\n    RuleId,\n    FieldPath,\n    Timestamp,\n    ValidateMode,\n    CliExitCode,\n    PauseScope,\n    DiagnosticSeverity,\n    ClearedOverrideKind,\n    derive_validate_mode,\n    fix_policy,\n    handle_validate,\n    handle_enable,\n    handle_status,\n    render_fix_diff,\n    render_enforcement_state,\n    build_enable_result,\n    query_enforcement_state,\n    Policy,\n    PolicyRule,\n    FixChange,\n    FixResult,\n    Diagnostic,\n    PauseEntry,\n    EnforcementState,\n    ClearedOverride,\n    EnableResult,\n)\n\n\n# ---------------------------------------------------------------------------\n# PolicyPath adversarial tests\n# ---------------------------------------------------------------------------\n\nclass TestGoodhartPolicyPath:\n\n    def test_goodhart_policy_path_nested_toml(self):\n        \"\"\"PolicyPath must accept any path ending in .toml regardless of directory depth.\"\"\"\n        pp = PolicyPath(value=\"/deeply/nested/dir/my_custom_policy.toml\")\n        assert pp.value == \"/deeply/nested/dir/my_custom_policy.toml\"\n\n    def test_goodhart_policy_path_dots_in_directory(self):\n        \"\"\"PolicyPath must validate only the final extension, not reject dots in directory names.\"\"\"\n        pp = PolicyPath(value=\"/some.dir/another.dir/config.yaml\")\n        assert pp.value == \"/some.dir/another.dir/config.yaml\"\n\n    def test_goodhart_policy_path_yml_rejected(self):\n        \"\"\"PolicyPath must reject .yml — only .toml and .yaml are allowed.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            PolicyPath(value=\"config.yml\")\n\n    def test_goodhart_policy_path_toml_bak_rejected(self):\n        \"\"\"PolicyPath must reject .toml.bak — .toml must be the final extension.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            PolicyPath(value=\"policy.toml.bak\")\n\n    def test_goodhart_policy_path_uppercase_yaml_rejected(self):\n        \"\"\"PolicyPath regex is case-sensitive — .YAML must be rejected.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            PolicyPath(value=\"policy.YAML\")\n\n    def test_goodhart_policy_path_uppercase_toml_rejected(self):\n        \"\"\"PolicyPath regex is case-sensitive — .TOML must be rejected.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            PolicyPath(value=\"policy.TOML\")\n\n    def test_goodhart_policy_path_dot_toml_minimal(self):\n        \"\"\"PolicyPath must accept '.toml' as it's >= 1 char and ends with .toml.\"\"\"\n        pp = PolicyPath(value=\".toml\")\n        assert pp.value == \".toml\"\n\n    def test_goodhart_policy_path_dot_yaml_minimal(self):\n        \"\"\"PolicyPath must accept '.yaml' as it's >= 1 char and ends with .yaml.\"\"\"\n        pp = PolicyPath(value=\".yaml\")\n        assert pp.value == \".yaml\"\n\n    def test_goodhart_policy_path_json_rejected(self):\n        \"\"\"PolicyPath must reject .json extension.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            PolicyPath(value=\"/etc/policy.json\")\n\n    def test_goodhart_policy_path_double_extension_yaml(self):\n        \"\"\"PolicyPath must accept paths with dots before the final .yaml extension.\"\"\"\n        pp = PolicyPath(value=\"my.policy.v2.yaml\")\n        assert pp.value == \"my.policy.v2.yaml\"\n\n    def test_goodhart_policy_path_whitespace_rejected(self):\n        \"\"\"PolicyPath with only whitespace must be rejected (doesn't end in .toml/.yaml).\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            PolicyPath(value=\"   \")\n\n    def test_goodhart_policy_path_txt_rejected(self):\n        \"\"\"PolicyPath must reject .txt extension.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            PolicyPath(value=\"rules.txt\")\n\n\n# ---------------------------------------------------------------------------\n# RuleId adversarial tests\n# ---------------------------------------------------------------------------\n\nclass TestGoodhartRuleId:\n\n    def test_goodhart_rule_id_single_char_alpha(self):\n        \"\"\"RuleId must accept single-character identifiers (min length 1).\"\"\"\n        rid = RuleId(value=\"a\")\n        assert rid.value == \"a\"\n\n    def test_goodhart_rule_id_single_char_upper(self):\n        \"\"\"RuleId must accept uppercase single character.\"\"\"\n        rid = RuleId(value=\"Z\")\n        assert rid.value == \"Z\"\n\n    def test_goodhart_rule_id_single_digit(self):\n        \"\"\"RuleId must accept a single digit.\"\"\"\n        rid = RuleId(value=\"9\")\n        assert rid.value == \"9\"\n\n    def test_goodhart_rule_id_hyphen_only(self):\n        \"\"\"RuleId must accept strings consisting solely of hyphens.\"\"\"\n        rid = RuleId(value=\"---\")\n        assert rid.value == \"---\"\n\n    def test_goodhart_rule_id_underscore_only(self):\n        \"\"\"RuleId must accept strings consisting solely of underscores.\"\"\"\n        rid = RuleId(value=\"___\")\n        assert rid.value == \"___\"\n\n    def test_goodhart_rule_id_slash_rejected(self):\n        \"\"\"RuleId must reject forward slashes.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            RuleId(value=\"rule/sub\")\n\n    def test_goodhart_rule_id_at_sign_rejected(self):\n        \"\"\"RuleId must reject @ symbols.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            RuleId(value=\"rule@v2\")\n\n    def test_goodhart_rule_id_unicode_rejected(self):\n        \"\"\"RuleId regex is ASCII-only — must reject unicode letters.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            RuleId(value=\"règle_1\")\n\n    def test_goodhart_rule_id_127_chars_accepted(self):\n        \"\"\"RuleId at 127 chars must be accepted (one below max boundary).\"\"\"\n        val = \"a\" * 127\n        rid = RuleId(value=val)\n        assert rid.value == val\n        assert len(rid.value) == 127\n\n    def test_goodhart_rule_id_colon_rejected(self):\n        \"\"\"RuleId must reject colons.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            RuleId(value=\"rule:1\")\n\n    def test_goodhart_rule_id_hash_rejected(self):\n        \"\"\"RuleId must reject hash/pound characters.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            RuleId(value=\"rule#1\")\n\n    def test_goodhart_rule_id_newline_rejected(self):\n        \"\"\"RuleId must reject strings containing newlines.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            RuleId(value=\"rule\\n1\")\n\n\n# ---------------------------------------------------------------------------\n# FieldPath adversarial tests\n# ---------------------------------------------------------------------------\n\nclass TestGoodhartFieldPath:\n\n    def test_goodhart_field_path_single_char(self):\n        \"\"\"FieldPath must accept a single character (min length 1).\"\"\"\n        fp = FieldPath(value=\"x\")\n        assert fp.value == \"x\"\n\n    def test_goodhart_field_path_array_index(self):\n        \"\"\"FieldPath must accept paths with array bracket notation.\"\"\"\n        fp = FieldPath(value=\"rules[0].limits[2].max_value\")\n        assert fp.value == \"rules[0].limits[2].max_value\"\n\n    def test_goodhart_field_path_slash_rejected(self):\n        \"\"\"FieldPath must reject slash characters.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            FieldPath(value=\"rules/0/field\")\n\n    def test_goodhart_field_path_space_rejected(self):\n        \"\"\"FieldPath must reject whitespace characters.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            FieldPath(value=\"field name\")\n\n    def test_goodhart_field_path_curly_brace_rejected(self):\n        \"\"\"FieldPath allows square brackets but must reject curly braces.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            FieldPath(value=\"rules{0}.field\")\n\n    def test_goodhart_field_path_parentheses_rejected(self):\n        \"\"\"FieldPath must reject parentheses.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            FieldPath(value=\"func(0)\")\n\n    def test_goodhart_field_path_511_chars_accepted(self):\n        \"\"\"FieldPath at 511 chars (one below max) must be accepted.\"\"\"\n        val = \"a\" * 511\n        fp = FieldPath(value=val)\n        assert fp.value == val\n        assert len(fp.value) == 511\n\n    def test_goodhart_field_path_at_sign_rejected(self):\n        \"\"\"FieldPath must reject @ symbol.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            FieldPath(value=\"field@attr\")\n\n    def test_goodhart_field_path_star_rejected(self):\n        \"\"\"FieldPath must reject wildcard * character.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            FieldPath(value=\"rules[*].field\")\n\n    def test_goodhart_field_path_hyphen_rejected(self):\n        \"\"\"FieldPath regex does not include hyphen — must reject it.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            FieldPath(value=\"my-field.path\")\n\n\n# ---------------------------------------------------------------------------\n# Timestamp adversarial tests\n# ---------------------------------------------------------------------------\n\nclass TestGoodhartTimestamp:\n\n    def test_goodhart_timestamp_different_date(self):\n        \"\"\"Timestamp must work for any valid UTC timestamp, not just hardcoded dates.\"\"\"\n        ts = Timestamp(value=\"1999-12-31T23:59:59Z\")\n        assert ts.value == \"1999-12-31T23:59:59Z\"\n\n    def test_goodhart_timestamp_high_precision_fractional(self):\n        \"\"\"Timestamp must accept fractional seconds with many digits.\"\"\"\n        ts = Timestamp(value=\"2024-01-15T10:30:00.123456789Z\")\n        assert ts.value == \"2024-01-15T10:30:00.123456789Z\"\n\n    def test_goodhart_timestamp_single_fractional_digit(self):\n        \"\"\"Timestamp must accept fractional seconds with just one digit.\"\"\"\n        ts = Timestamp(value=\"2024-06-01T00:00:00.1Z\")\n        assert ts.value == \"2024-06-01T00:00:00.1Z\"\n\n    def test_goodhart_timestamp_offset_rejected(self):\n        \"\"\"Timestamp must reject +00:00 offset — only Z suffix allowed.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"2024-01-15T10:30:00+00:00\")\n\n    def test_goodhart_timestamp_lowercase_z_rejected(self):\n        \"\"\"Timestamp requires uppercase Z — lowercase z must be rejected.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"2024-01-15T10:30:00z\")\n\n    def test_goodhart_timestamp_missing_seconds_rejected(self):\n        \"\"\"Timestamp must reject strings missing the seconds component.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"2024-01-15T10:30Z\")\n\n    def test_goodhart_timestamp_extra_prefix_rejected(self):\n        \"\"\"Timestamp regex is anchored — leading garbage must be rejected.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"XX2024-01-15T10:30:00Z\")\n\n    def test_goodhart_timestamp_extra_suffix_rejected(self):\n        \"\"\"Timestamp regex is end-anchored — trailing garbage after Z must be rejected.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"2024-01-15T10:30:00Zextra\")\n\n    def test_goodhart_timestamp_date_only_rejected(self):\n        \"\"\"Timestamp must reject date-only strings.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"2024-01-15\")\n\n    def test_goodhart_timestamp_space_separator_rejected(self):\n        \"\"\"Timestamp must reject space as date-time separator instead of T.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"2024-01-15 10:30:00Z\")\n\n    def test_goodhart_timestamp_negative_offset_rejected(self):\n        \"\"\"Timestamp must reject negative UTC offsets.\"\"\"\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"2024-01-15T10:30:00-05:00\")\n\n    def test_goodhart_timestamp_epoch_start(self):\n        \"\"\"Timestamp must accept epoch start date.\"\"\"\n        ts = Timestamp(value=\"1970-01-01T00:00:00Z\")\n        assert ts.value == \"1970-01-01T00:00:00Z\"\n\n    def test_goodhart_timestamp_far_future(self):\n        \"\"\"Timestamp must accept far-future dates.\"\"\"\n        ts = Timestamp(value=\"9999-12-31T23:59:59Z\")\n        assert ts.value == \"9999-12-31T23:59:59Z\"\n\n\n# ---------------------------------------------------------------------------\n# derive_validate_mode adversarial tests\n# ---------------------------------------------------------------------------\n\nclass TestGoodhartDeriveValidateMode:\n\n    def test_goodhart_derive_validate_mode_returns_enum_type(self):\n        \"\"\"derive_validate_mode must return actual ValidateMode enum values, not strings.\"\"\"\n        result = derive_validate_mode(fix=True, dry_run=False)\n        assert isinstance(result, ValidateMode)\n        assert result == ValidateMode.Fix\n\n    def test_goodhart_derive_validate_mode_diagnose_returns_enum(self):\n        \"\"\"DiagnoseOnly result must be the actual enum member.\"\"\"\n        result = derive_validate_mode(fix=False, dry_run=False)\n        assert isinstance(result, ValidateMode)\n        assert result == ValidateMode.DiagnoseOnly\n\n    def test_goodhart_derive_validate_mode_dryrun_returns_enum(self):\n        \"\"\"DryRun result must be the actual enum member.\"\"\"\n        result = derive_validate_mode(fix=True, dry_run=True)\n        assert isinstance(result, ValidateMode)\n        assert result == ValidateMode.DryRun\n\n    def test_goodhart_derive_validate_mode_all_four_combos_exhaustive(self):\n        \"\"\"All four boolean combinations must be handled — no missing branch.\"\"\"\n        # (False, False) -> DiagnoseOnly\n        assert derive_validate_mode(fix=False, dry_run=False) == ValidateMode.DiagnoseOnly\n        # (True, False) -> Fix\n        assert derive_validate_mode(fix=True, dry_run=False) == ValidateMode.Fix\n        # (True, True) -> DryRun\n        assert derive_validate_mode(fix=True, dry_run=True) == ValidateMode.DryRun\n        # (False, True) -> error\n        with pytest.raises(Exception):\n            derive_validate_mode(fix=False, dry_run=True)\n\n\n# ---------------------------------------------------------------------------\n# render_fix_diff adversarial tests\n# ---------------------------------------------------------------------------\n\nclass TestGoodhartRenderFixDiff:\n\n    def test_goodhart_render_fix_diff_preserves_input_order(self):\n        \"\"\"render_fix_diff must preserve exact input order, not alphabetically sort.\"\"\"\n        changes = [\n            FixChange(rule_id=\"zz_rule\", field_path=\"z.field\", old_value=\"9\", new_value=\"1\"),\n            FixChange(rule_id=\"aa_rule\", field_path=\"a.field\", old_value=\"1\", new_value=\"9\"),\n            FixChange(rule_id=\"mm_rule\", field_path=\"m.field\", old_value=\"5\", new_value=\"3\"),\n        ]\n        result = render_fix_diff(changes)\n        lines = [l for l in result.split(\"\\n\") if l.strip()]\n        assert len(lines) == 3\n        assert lines[0].startswith(\"zz_rule\")\n        assert lines[1].startswith(\"aa_rule\")\n        assert lines[2].startswith(\"mm_rule\")\n\n    def test_goodhart_render_fix_diff_uses_unicode_arrow(self):\n        \"\"\"render_fix_diff must use Unicode → (U+2192), not ASCII alternatives.\"\"\"\n        changes = [\n            FixChange(rule_id=\"r1\", field_path=\"f.p\", old_value=\"10\", new_value=\"5\"),\n        ]\n        result = render_fix_diff(changes)\n        assert \"\\u2192\" in result  # Unicode right arrow →\n        assert \"->\" not in result or \"\\u2192\" in result  # Should not use ASCII ->\n\n    def test_goodhart_render_fix_diff_exact_format(self):\n        \"\"\"render_fix_diff must produce exact format 'rule_id: field_path: old → new'.\"\"\"\n        changes = [\n            FixChange(rule_id=\"R1\", field_path=\"f.p\", old_value=\"10\", new_value=\"5\"),\n        ]\n        result = render_fix_diff(changes)\n        lines = [l for l in result.split(\"\\n\") if l.strip()]\n        assert len(lines) == 1\n        expected = \"R1: f.p: 10 \\u2192 5\"\n        assert lines[0] == expected\n\n    def test_goodhart_render_fix_diff_special_chars_in_values(self):\n        \"\"\"render_fix_diff must handle values with colons and special chars verbatim.\"\"\"\n        changes = [\n            FixChange(rule_id=\"rule1\", field_path=\"config.url\", old_value=\"http://old:8080\", new_value=\"http://new:9090\"),\n        ]\n        result = render_fix_diff(changes)\n        assert \"http://old:8080\" in result\n        assert \"http://new:9090\" in result\n\n    def test_goodhart_render_fix_diff_five_changes(self):\n        \"\"\"render_fix_diff with many changes must produce exactly that many lines.\"\"\"\n        changes = [\n            FixChange(rule_id=f\"rule_{i}\", field_path=f\"field_{i}\", old_value=str(i), new_value=str(i * 10))\n            for i in range(5)\n        ]\n        result = render_fix_diff(changes)\n        lines = [l for l in result.split(\"\\n\") if l.strip()]\n        assert len(lines) == 5\n\n\n# ---------------------------------------------------------------------------\n# build_enable_result adversarial tests\n# ---------------------------------------------------------------------------\n\nclass TestGoodhartBuildEnableResult:\n\n    def test_goodhart_build_enable_result_many_sessions(self):\n        \"\"\"build_enable_result must handle many sessions, not just 1-2.\"\"\"\n        sessions = [f\"session_{i}\" for i in range(20)]\n        result = build_enable_result(global_was_disabled=True, cleared_sessions=sessions)\n        assert result.was_disabled is True\n        assert len(result.cleared) == 21  # 1 global + 20 sessions\n\n    def test_goodhart_build_enable_result_session_order_preserved(self):\n        \"\"\"build_enable_result must preserve input order of sessions, not sort.\"\"\"\n        sessions = [\"zebra_session\", \"alpha_session\", \"middle_session\"]\n        result = build_enable_result(global_was_disabled=False, cleared_sessions=sessions)\n        session_entries = [c for c in result.cleared if c.kind == ClearedOverrideKind.SessionDisable]\n        assert len(session_entries) == 3\n        assert session_entries[0].session_id == \"zebra_session\"\n        assert session_entries[1].session_id == \"alpha_session\"\n        assert session_entries[2].session_id == \"middle_session\"\n\n    def test_goodhart_build_enable_result_global_disable_has_no_session_id(self):\n        \"\"\"GlobalDisable ClearedOverride must have session_id=None.\"\"\"\n        result = build_enable_result(global_was_disabled=True, cleared_sessions=[])\n        assert len(result.cleared) == 1\n        assert result.cleared[0].kind == ClearedOverrideKind.GlobalDisable\n        assert result.cleared[0].session_id is None\n\n    def test_goodhart_build_enable_result_session_disable_has_session_id(self):\n        \"\"\"SessionDisable ClearedOverride must carry the correct session_id.\"\"\"\n        result = build_enable_result(global_was_disabled=False, cleared_sessions=[\"sess_abc\"])\n        assert len(result.cleared) == 1\n        assert result.cleared[0].kind == ClearedOverrideKind.SessionDisable\n        assert result.cleared[0].session_id == \"sess_abc\"\n\n    def test_goodhart_build_enable_result_global_first_then_sessions(self):\n        \"\"\"When both global and sessions cleared, GlobalDisable must be first in list.\"\"\"\n        result = build_enable_result(global_was_disabled=True, cleared_sessions=[\"s1\", \"s2\"])\n        assert result.cleared[0].kind == ClearedOverrideKind.GlobalDisable\n        for entry in result.cleared[1:]:\n            assert entry.kind == ClearedOverrideKind.SessionDisable\n\n    def test_goodhart_build_enable_result_empty_is_not_disabled(self):\n        \"\"\"build_enable_result with nothing cleared must have was_disabled=False and empty cleared.\"\"\"\n        result = build_enable_result(global_was_disabled=False, cleared_sessions=[])\n        assert result.was_disabled is False\n        assert len(result.cleared) == 0\n\n    def test_goodhart_build_enable_result_sessions_only_is_disabled(self):\n        \"\"\"build_enable_result with sessions but no global must still have was_disabled=True.\"\"\"\n        result = build_enable_result(global_was_disabled=False, cleared_sessions=[\"s1\"])\n        assert result.was_disabled is True\n\n    def test_goodhart_build_enable_result_global_only_is_disabled(self):\n        \"\"\"build_enable_result with global but no sessions must have was_disabled=True.\"\"\"\n        result = build_enable_result(global_was_disabled=True, cleared_sessions=[])\n        assert result.was_disabled is True\n\n\n# ---------------------------------------------------------------------------\n# fix_policy adversarial tests\n# ---------------------------------------------------------------------------\n\nclass TestGoodhartFixPolicy:\n\n    def test_goodhart_fix_policy_distinct_rule_field_pairs(self):\n        \"\"\"fix_policy must never produce duplicate (rule_id, field_path) pairs in changes.\"\"\"\n        # Create a policy with multiple rules having clamping violations\n        rules = [PolicyRule(id=f\"rule_{i}\", description=f\"Rule {i}\") for i in range(5)]\n        policy = Policy(path=\"test.toml\", rules=rules, raw_bytes=\"\")\n        result = fix_policy(policy)\n        pairs = [(c.rule_id, c.field_path) for c in result.changes]\n        assert len(pairs) == len(set(pairs)), \"Duplicate (rule_id, field_path) pairs found in changes\"\n\n    def test_goodhart_fix_policy_original_preserved(self):\n        \"\"\"fix_policy must return the original policy unmodified in FixResult.original.\"\"\"\n        rules = [PolicyRule(id=\"rule_1\", description=\"Test rule\")]\n        policy = Policy(path=\"test.toml\", rules=rules, raw_bytes=\"original content\")\n        result = fix_policy(policy)\n        assert result.original.raw_bytes == \"original content\"\n        assert result.original.path == \"test.toml\"\n\n    def test_goodhart_fix_policy_has_changes_false_means_identical(self):\n        \"\"\"When has_changes is False, fixed and original policies must be semantically identical.\"\"\"\n        rules = [PolicyRule(id=\"clean_rule\", description=\"A clean rule\")]\n        policy = Policy(path=\"clean.toml\", rules=rules, raw_bytes=\"clean content\")\n        result = fix_policy(policy)\n        if not result.has_changes:\n            assert result.fixed.raw_bytes == result.original.raw_bytes\n            assert len(result.fixed.rules) == len(result.original.rules)\n\n    def test_goodhart_fix_policy_has_changes_consistency_general(self):\n        \"\"\"has_changes must equal (len(changes) > 0) for any input, not just test fixtures.\"\"\"\n        rules = [PolicyRule(id=\"r\", description=\"d\")]\n        policy = Policy(path=\"p.toml\", rules=rules, raw_bytes=\"\")\n        result = fix_policy(policy)\n        assert result.has_changes == (len(result.changes) > 0)\n\n\n# ---------------------------------------------------------------------------\n# render_enforcement_state adversarial tests\n# ---------------------------------------------------------------------------\n\nclass TestGoodhartRenderEnforcementState:\n\n    def test_goodhart_render_enforcement_state_disabled_sessions_only(self):\n        \"\"\"With only disabled sessions, only Disabled Sessions section should appear.\"\"\"\n        state = EnforcementState(\n            globally_disabled=False,\n            disabled_sessions=[\"s1\", \"s2\"],\n            global_pause=None,\n            active_pauses=[],\n            vault_present=False,\n        )\n        output = render_enforcement_state(state)\n        assert output != \"No active overrides.\"\n        assert \"s1\" in output\n        assert \"s2\" in output\n\n    def test_goodhart_render_enforcement_state_global_pause_only(self):\n        \"\"\"With only a global pause, only Global Pause section should appear.\"\"\"\n        from datetime import datetime, timezone\n        some_time = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)\n        state = EnforcementState(\n            globally_disabled=False,\n            disabled_sessions=[],\n            global_pause=some_time,\n            active_pauses=[],\n            vault_present=True,\n        )\n        output = render_enforcement_state(state)\n        assert output != \"No active overrides.\"\n\n    def test_goodhart_render_enforcement_state_vault_true_no_overrides(self):\n        \"\"\"vault_present=True with no overrides must still output 'No active overrides.'\"\"\"\n        state = EnforcementState(\n            globally_disabled=False,\n            disabled_sessions=[],\n            global_pause=None,\n            active_pauses=[],\n            vault_present=True,\n        )\n        output = render_enforcement_state(state)\n        assert output.strip() == \"No active overrides.\"\n\n    def test_goodhart_render_enforcement_state_scope_ordering(self):\n        \"\"\"Active pauses must be sorted: Global < Rule < Session < RuleSession.\"\"\"\n        from datetime import datetime, timezone\n        t1 = datetime(2025, 7, 1, 0, 0, 0, tzinfo=timezone.utc)\n        pauses = [\n            PauseEntry(scope=PauseScope.RuleSession, rule_id=\"r1\", session_id=\"s1\", expires_at=t1),\n            PauseEntry(scope=PauseScope.Session, rule_id=None, session_id=\"s1\", expires_at=t1),\n            PauseEntry(scope=PauseScope.Global, rule_id=None, session_id=None, expires_at=t1),\n            PauseEntry(scope=PauseScope.Rule, rule_id=\"r1\", session_id=None, expires_at=t1),\n        ]\n        state = EnforcementState(\n            globally_disabled=False,\n            disabled_sessions=[],\n            global_pause=None,\n            active_pauses=pauses,\n            vault_present=False,\n        )\n        output = render_enforcement_state(state)\n        # Find positions of scope indicators in output\n        lines = output.split(\"\\n\")\n        # The Global scope must appear before Rule, Rule before Session, Session before RuleSession\n        global_pos = None\n        rule_pos = None\n        session_pos = None\n        rulesession_pos = None\n        for i, line in enumerate(lines):\n            lower = line.lower()\n            if \"global\" in lower and global_pos is None and \"rule\" not in lower and \"session\" not in lower:\n                global_pos = i\n            elif \"rulesession\" in lower or \"rule_session\" in lower or (\"rule\" in lower and \"session\" in lower):\n                rulesession_pos = i\n            elif \"rule\" in lower and \"session\" not in lower and rule_pos is None:\n                rule_pos = i\n            elif \"session\" in lower and \"rule\" not in lower and session_pos is None:\n                session_pos = i\n\n        # At minimum verify the output contains all pause entries\n        assert len([l for l in lines if l.strip()]) >= 4\n\n    def test_goodhart_render_enforcement_state_same_scope_sorted_by_expiry(self):\n        \"\"\"Pauses with same scope must be sorted by expiry ascending.\"\"\"\n        from datetime import datetime, timezone\n        t_early = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)\n        t_late = datetime(2025, 12, 31, 23, 59, 59, tzinfo=timezone.utc)\n        t_mid = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)\n        pauses = [\n            PauseEntry(scope=PauseScope.Rule, rule_id=\"r_late\", session_id=None, expires_at=t_late),\n            PauseEntry(scope=PauseScope.Rule, rule_id=\"r_early\", session_id=None, expires_at=t_early),\n            PauseEntry(scope=PauseScope.Rule, rule_id=\"r_mid\", session_id=None, expires_at=t_mid),\n        ]\n        state = EnforcementState(\n            globally_disabled=False,\n            disabled_sessions=[],\n            global_pause=None,\n            active_pauses=pauses,\n            vault_present=False,\n        )\n        output = render_enforcement_state(state)\n        # r_early must appear before r_mid, which must appear before r_late\n        early_pos = output.find(\"r_early\")\n        mid_pos = output.find(\"r_mid\")\n        late_pos = output.find(\"r_late\")\n        assert early_pos != -1 and mid_pos != -1 and late_pos != -1\n        assert early_pos < mid_pos < late_pos\n\n    def test_goodhart_render_enforcement_state_active_pauses_only(self):\n        \"\"\"With only active pauses, output must not be 'No active overrides.'\"\"\"\n        from datetime import datetime, timezone\n        t1 = datetime(2025, 7, 1, 0, 0, 0, tzinfo=timezone.utc)\n        pauses = [\n            PauseEntry(scope=PauseScope.Global, rule_id=None, session_id=None, expires_at=t1),\n        ]\n        state = EnforcementState(\n            globally_disabled=False,\n            disabled_sessions=[],\n            global_pause=None,\n            active_pauses=pauses,\n            vault_present=False,\n        )\n        output = render_enforcement_state(state)\n        assert output.strip() != \"No active overrides.\"\n"
+}

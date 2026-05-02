@@ -42,6 +42,7 @@ struct UpstreamConnection {
 pub struct ProxyServer {
     upstreams: Arc<Mutex<Vec<UpstreamConnection>>>,
     policy_path: PathBuf,
+    rules_path: PathBuf,
     vault: Option<Vault>,
 }
 
@@ -93,10 +94,13 @@ impl ServerHandler for ProxyServer {
             // Reload policy on each call (hot-reload) with integrity verification
             let current_policy = if let Some(ref v) = self.vault {
                 if !vault::verify_policy_integrity(v.session_key(), &self.policy_path) {
-                    // Tampered policy — use safe defaults
+                    // Tampered system policy — use safe defaults
+                    policy::default_policy()
+                } else if self.rules_path.exists() && !vault::verify_policy_integrity(v.session_key(), &self.rules_path) {
+                    // Tampered user rules — use safe defaults
                     policy::default_policy()
                 } else {
-                    policy::load_policy(&self.policy_path)
+                    policy::load_merged_policy(&self.policy_path, &self.rules_path)
                 }
             } else {
                 // No vault — cannot verify policy integrity, use hardcoded defaults
@@ -222,6 +226,7 @@ pub async fn run_proxy() -> Result<(), Box<dyn std::error::Error>> {
     let proxy = ProxyServer {
         upstreams: Arc::new(Mutex::new(upstreams)),
         policy_path: vault::signet_dir().join("policy.yaml"),
+        rules_path: vault::signet_dir().join("rules.yaml"),
         vault: vault::try_load_vault(),
     };
 

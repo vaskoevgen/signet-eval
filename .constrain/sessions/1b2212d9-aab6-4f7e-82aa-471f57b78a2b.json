@@ -1,0 +1,202 @@
+{
+  "id": "1b2212d9-aab6-4f7e-82aa-471f57b78a2b",
+  "schema_version": 1,
+  "posture": "skeptic",
+  "phase": "understand",
+  "round": 0,
+  "understand_rounds": 0,
+  "challenge_rounds": 0,
+  "conversation": [],
+  "problem_model": {
+    "system_description": "Policy engine with deterministic rule evaluation using regex patterns and structured conditions. Supports Gate actions (requiring prior actions within timeframe) and Ensure actions (script-based verification). No NLP or network dependencies - regex and structured conditions only. First-match-wins evaluation with comprehensive condition functions including parameter checks, spending limits, credential verification, and recent action history. Features encrypted vault with tiered access (unencrypted ledger, session-encrypted state, compartment-encrypted credentials), Argon2id key derivation, device-specific session key caching, and preflight constraint tracking with violation escalation.",
+    "stakeholders": [
+      "AI agents",
+      "Users of policy enforcement system",
+      "CLI users managing policies",
+      "System administrators"
+    ],
+    "failure_modes": [
+      {
+        "description": "ASK constraints with broad conditions fire on EVERY tool call touching related files, causing excessive permission prompts",
+        "severity": "medium"
+      },
+      {
+        "description": "CLI gaps in validate --fix / --dr functionality",
+        "severity": "low"
+      },
+      {
+        "description": "Policy HMAC verification failure falls back to safe defaults",
+        "severity": "medium"
+      },
+      {
+        "description": "Invalid JSON input to test command",
+        "severity": "low"
+      },
+      {
+        "description": "Mismatched vault passphrase confirmation",
+        "severity": "low"
+      },
+      {
+        "description": "Attempting to pause locked rules",
+        "severity": "low"
+      },
+      {
+        "description": "Invalid regex patterns in tool_pattern cause rules to be silently skipped during compilation",
+        "severity": "medium"
+      },
+      {
+        "description": "Condition evaluation errors cause rules to not match, falling through to default action",
+        "severity": "medium"
+      },
+      {
+        "description": "Large input sizes (1M+ characters) may impact evaluation performance",
+        "severity": "low"
+      },
+      {
+        "description": "Homoglyph attacks using Unicode lookalikes bypass string-based protections",
+        "severity": "medium"
+      },
+      {
+        "description": "Path traversal attempts in tool names don't cause crashes but may bypass intended restrictions",
+        "severity": "low"
+      },
+      "Vault lockout after 5 failed passphrase attempts for 5 minutes",
+      "Expired credentials return None during retrieval",
+      "Session key decryption failure when device identifiers change",
+      "Policy HMAC verification fails when policy modified without re-signing",
+      "Database corruption could cause vault operations to fail",
+      "Missing device identifiers fall back to generic string",
+      "Credential capability requests fail when constraints don't match",
+      "Preflight HMAC mismatch causes preflight to be ignored with warning"
+    ],
+    "dependencies": [
+      "Rust build system (cargo)",
+      "HMAC signing",
+      "Vault storage",
+      "Policy YAML files",
+      "clap CLI parsing",
+      "rpassword for secure input",
+      "serde_yaml for policy files",
+      "chrono for timestamps",
+      "MCP protocol (optional feature)",
+      "regex crate for pattern matching",
+      "serde/serde_yaml for configuration serialization",
+      "Vault for action history and credential storage",
+      "tempfile for testing",
+      "aes_gcm for AES-256-GCM encryption",
+      "argon2 for memory-hard key derivation",
+      "base64 encoding/decoding",
+      "hkdf for key derivation",
+      "hmac for authentication",
+      "rusqlite for SQLite database",
+      "sha2 for hashing",
+      "Device-specific identifiers (/etc/machine-id, hardware UUID)",
+      "SQLite database for vault storage",
+      "File system permissions (Unix mode 0o600 for session keys)"
+    ],
+    "assumptions": [
+      "Agents will submit structured plans before execution",
+      "Pre-commitment mechanisms reduce goal pressure during planning",
+      "Default policy path is ~/.signet/policy.yaml",
+      "Home directory expansion works",
+      "Vault passphrase is at least 8 characters",
+      "SIGNET_SESSION environment variable for session-specific controls",
+      "Tool calls have structured JSON parameters",
+      "Rule evaluation budget is under 10ms for performance",
+      "First matching rule wins - rule ordering matters",
+      "Locked rules cannot be auto-fixed and protect core system functionality",
+      "Self-protection rules are always first in evaluation order",
+      "Ensure scripts are placed in ~/.signet/checks/ directory",
+      "Gate actions fail closed when vault is unavailable",
+      "Session TTL is 30 minutes (1800 seconds)",
+      "Maximum 5 failed vault unlock attempts before 5-minute lockout",
+      "Maximum 20 preflight constraints per preflight",
+      "Default violation threshold of 5 before escalation",
+      "AES-256-GCM provides sufficient encryption",
+      "Argon2id default parameters provide adequate protection",
+      "Device identifiers remain stable across reboots",
+      "SQLite database integrity is maintained",
+      "File system supports Unix permissions on supported platforms"
+    ],
+    "boundaries": [
+      "Single binary implementation",
+      "Deterministic policy enforcement scope",
+      "Policy file must be YAML format",
+      "Pause duration limited to 0-60 minutes",
+      "Session-based controls require environment variable",
+      "No NLP or network operations in policy evaluation",
+      "Regex patterns only - no code execution in conditions",
+      "Gate timeframe limited to 1-500 actions",
+      "Ensure timeout clamped to 1-30 seconds",
+      "Script names must be simple filenames without path separators",
+      "Self-protection rules cannot be disabled or bypassed",
+      "Vault tiers: Tier 1 unencrypted (ledger), Tier 2 session-encrypted (state), Tier 3 compartment-encrypted (credentials)",
+      "Session key cache encrypted with device key, not plaintext",
+      "Failed attempt lockout limited to 5 minutes",
+      "Preflight constraints capped at 20 per submission",
+      "Device key derivation uses machine ID and username only",
+      "One-time credentials invalidated after first successful use"
+    ],
+    "history": [
+      "Preflight subsystem added as extension",
+      "Plan B alternatives implemented for existing rules",
+      "Gate/ensure actions completed in v3.3.0",
+      "88 tests currently passing"
+    ],
+    "success_shape": [
+      "Aviation-inspired safety mechanisms",
+      "Deterministic enforcement",
+      "Pre-execution planning reduces risk",
+      "Structured mission plans with identified risks and constraints",
+      "Comprehensive CLI with clear subcommands",
+      "Secure vault operations with passphrase confirmation",
+      "Graceful fallback to safe defaults on policy tampering",
+      "Flexible pause/resume controls at global, rule, or session level",
+      "Evaluation completes under 10ms performance budget",
+      "Self-protection rules prevent policy tampering",
+      "Gate actions enforce proper sequencing of operations",
+      "Ensure actions enable external script validation",
+      "Comprehensive condition functions for flexible rule authoring",
+      "Auto-fix capability for common policy errors while preserving locked rules",
+      "Graceful degradation on condition evaluation errors",
+      "Three-tier security model with appropriate encryption levels",
+      "Device-specific session key caching for seamless hook mode operation",
+      "Brute-force protection with progressive lockout",
+      "Credential scoping by domain, purpose, amount, and one-time usage",
+      "Preflight constraint tracking with violation counting and escalation",
+      "HMAC-based integrity protection for policies and preflights",
+      "Graceful fallback when device identifiers unavailable",
+      "Comprehensive audit logging of all vault operations"
+    ],
+    "acceptance_criteria": [
+      "cargo build --release works",
+      "cargo test passes (88 tests)",
+      "Policy YAML loading functions correctly",
+      "HMAC-signed vault-stored mission plans supported",
+      "Policy engine evaluates 1000+ rules under 10ms",
+      "Self-protection rules cannot be bypassed by any tool call",
+      "Gate actions correctly check vault action history",
+      "Ensure actions return unresolved for external script execution",
+      "Validation identifies and can auto-fix regex errors, timeout ranges",
+      "Default policy blocks known dangerous operations (rm, force push, etc.)",
+      "Locked rules are preserved during auto-fix operations",
+      "Vault setup and unlock with passphrase works correctly",
+      "Credential storage and retrieval across all tiers functions properly",
+      "Session spending tracking and limits enforced accurately",
+      "Recent action queries support pipe-delimited OR searches",
+      "Policy HMAC signing and verification prevents tampering",
+      "Preflight storage, violation tracking, and escalation work as designed",
+      "Device key encryption/decryption of session keys successful",
+      "Failed attempt lockout and recovery timing correct",
+      "Credential capability requests respect all metadata constraints",
+      "One-time credentials properly invalidated after use"
+    ]
+  },
+  "prompt_md": "",
+  "constraints_yaml": "",
+  "trust_policy_yaml": "",
+  "component_map_yaml": "",
+  "schema_hints_yaml": "",
+  "created_at": "2026-04-02T05:37:34.693576+00:00",
+  "updated_at": "2026-04-02T05:38:57.714720+00:00"
+}

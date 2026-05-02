@@ -473,7 +473,7 @@ fn resolve_gate(config: &GateConfig, vault: Option<&Vault>) -> bool {
     vault.has_recent_allowed_action(&config.requires_prior, config.within)
 }
 
-/// Load policy from file, falling back to defaults.
+/// Load policy from a single file, falling back to defaults.
 pub fn load_policy(path: &Path) -> CompiledPolicy {
     match std::fs::read_to_string(path) {
         Ok(content) => {
@@ -486,12 +486,91 @@ pub fn load_policy(path: &Path) -> CompiledPolicy {
     }
 }
 
+/// Load merged policy from system policy + user rules files.
+/// Evaluation order: locked rules (from policy.yaml) → user rules (from rules.yaml) → unlocked system defaults (from policy.yaml).
+/// Falls back gracefully if rules.yaml doesn't exist.
+pub fn load_merged_policy(policy_path: &Path, rules_path: &Path) -> CompiledPolicy {
+    let system_config = match std::fs::read_to_string(policy_path) {
+        Ok(content) => {
+            match serde_yaml::from_str::<PolicyConfig>(&content) {
+                Ok(config) => config,
+                Err(_) => return default_policy(),
+            }
+        }
+        Err(_) => return default_policy(),
+    };
+
+    let user_rules = match std::fs::read_to_string(rules_path) {
+        Ok(content) => {
+            match serde_yaml::from_str::<Vec<PolicyRule>>(&content) {
+                Ok(rules) => rules,
+                Err(_) => {
+                    // Try parsing as PolicyConfig (version/rules/default_action wrapper)
+                    match serde_yaml::from_str::<PolicyConfig>(&content) {
+                        Ok(config) => config.rules,
+                        Err(_) => vec![],
+                    }
+                }
+            }
+        }
+        Err(_) => vec![], // rules.yaml is optional
+    };
+
+    let merged = merge_rules(&system_config.rules, &user_rules);
+    let config = PolicyConfig {
+        version: system_config.version,
+        default_action: system_config.default_action,
+        rules: merged,
+    };
+    CompiledPolicy::from_config(&config)
+}
+
+/// Merge system rules and user rules: locked first, then user rules, then unlocked system defaults.
+pub fn merge_rules(system_rules: &[PolicyRule], user_rules: &[PolicyRule]) -> Vec<PolicyRule> {
+    let mut merged = Vec::new();
+    // 1. Locked system rules (self-protection) first
+    for r in system_rules {
+        if r.locked {
+            merged.push(r.clone());
+        }
+    }
+    // 2. User rules next (higher priority than system defaults)
+    merged.extend(user_rules.iter().cloned());
+    // 3. Unlocked system defaults last
+    for r in system_rules {
+        if !r.locked {
+            merged.push(r.clone());
+        }
+    }
+    merged
+}
+
 /// Load raw policy config from file.
 pub fn load_policy_config(path: &Path) -> Result<PolicyConfig, String> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| format!("Cannot read policy file: {e}"))?;
     serde_yaml::from_str::<PolicyConfig>(&content)
         .map_err(|e| format!("YAML parse error: {e}"))
+}
+
+/// Load user rules from rules.yaml. Returns empty vec if file doesn't exist.
+pub fn load_rules(path: &Path) -> Vec<PolicyRule> {
+    match std::fs::read_to_string(path) {
+        Ok(content) => {
+            // Try as bare list of rules first (simpler format)
+            match serde_yaml::from_str::<Vec<PolicyRule>>(&content) {
+                Ok(rules) => rules,
+                Err(_) => {
+                    // Fall back to PolicyConfig wrapper
+                    match serde_yaml::from_str::<PolicyConfig>(&content) {
+                        Ok(config) => config.rules,
+                        Err(_) => vec![],
+                    }
+                }
+            }
+        }
+        Err(_) => vec![],
+    }
 }
 
 /// Known condition function names.
@@ -873,34 +952,9 @@ pub fn self_protection_rules() -> Vec<PolicyRule> {
     ]
 }
 
-pub fn default_policy() -> CompiledPolicy {
-    let mut rules = self_protection_rules();
-    rules.extend(vec![
-        // Planning gate: require a plan before writing code.
-        // Uses condition (not GATE action) so later rules like protect_core_files still fire.
-        PolicyRule {
-            name: "require_plan_before_code".into(),
-            tool_pattern: "^(Edit|Write|NotebookEdit)$".into(),
-            conditions: vec!["not(has_recent_action('EnterPlanMode|TaskCreate', 500))".into()],
-            action: Decision::Ask,
-            locked: false,
-            reason: Some("Present a plan before writing code.".into()),
-            alternative: Some("Use /plan to enter plan mode, or create tasks with TaskCreate first.".into()),
-            gate: None, ensure: None,
-        },
-        // Core/DSL file protection: require explicit permission for core file modifications.
-        PolicyRule {
-            name: "protect_core_files".into(),
-            tool_pattern: "^(Edit|Write)$".into(),
-            conditions: vec![
-                "or(matches(file_path, '/(core|dsl|models|schema|engine)/') || matches(file_path, '\\.(grammar|dsl|schema)$'))".into(),
-            ],
-            action: Decision::Ask,
-            locked: false,
-            reason: Some("This appears to be a core/DSL file. Confirm core file modifications are in scope for this task.".into()),
-            alternative: Some("Work on net-new files only, or clarify with the user that core file changes are needed.".into()),
-            gate: None, ensure: None,
-        },
+/// Universal safe default rules (unlocked). Used by both default_policy() and init.
+pub fn system_default_rules() -> Vec<PolicyRule> {
+    vec![
         PolicyRule {
             name: "block_rm".into(),
             tool_pattern: "^Bash$".into(),
@@ -961,31 +1015,62 @@ pub fn default_policy() -> CompiledPolicy {
             alternative: Some("Use minimum permissions: 'chmod 755' for executables, 'chmod 644' for files, 'chmod 600' for secrets.".into()),
             gate: None, ensure: None,
         },
-        // Identity enforcement: git remote operations should use the correct GitHub account.
-        // Unlocked — requires user to install the check script at ~/.signet/checks/gh-identity-matches-remote.
-        // If the script is not installed, the ensure resolves gracefully (allow).
-        PolicyRule {
-            name: "github_identity_guard".into(),
-            tool_pattern: "^Bash$".into(),
-            conditions: vec!["any_of(parameters, 'git push', 'git pull', 'git fetch', 'git clone')".into()],
-            action: Decision::Ensure,
-            locked: false,
-            reason: Some("Git remote operations must use the correct GitHub identity.".into()),
-            alternative: Some("Run 'gh auth switch --user <correct_user>' to match the remote's org.".into()),
-            gate: None,
-            ensure: Some(EnsureConfig {
-                check: "gh-identity-matches-remote".into(),
-                timeout: 15,
-                message: "GitHub identity mismatch. Run: gh auth switch --user <correct_user>".into(),
-            }),
-        },
-    ]);
+    ]
+}
+
+pub fn default_policy() -> CompiledPolicy {
+    let mut rules = self_protection_rules();
+    rules.extend(system_default_rules());
     let config = PolicyConfig {
         version: 1,
         default_action: Decision::Allow,
         rules,
     };
     CompiledPolicy::from_config(&config)
+}
+
+/// Sample rules for ~/.signet/sample.yaml — opinionated examples users can copy to rules.yaml.
+pub fn sample_yaml() -> String {
+    r#"# Sample rules for signet-eval
+# Copy rules you want into ~/.signet/rules.yaml (or add via MCP signet_add_rule).
+# User rules evaluate AFTER self-protection but BEFORE system defaults,
+# so they can override system behavior.
+#
+# Format: bare YAML list of rules (no version/default_action wrapper needed).
+
+# Workflow gate: require planning before writing code
+- name: require_plan_before_code
+  tool_pattern: "^(Edit|Write|NotebookEdit)$"
+  conditions:
+    - "not(has_recent_action('EnterPlanMode|TaskCreate', 500))"
+  action: ASK
+  reason: Present a plan before writing code.
+  alternative: Use /plan to enter plan mode, or create tasks with TaskCreate first.
+
+# Core file protection: confirm before modifying core/DSL files
+- name: protect_core_files
+  tool_pattern: "^(Edit|Write)$"
+  conditions:
+    - "or(matches(file_path, '/(core|dsl|models|schema|engine)/') || matches(file_path, '\\.(grammar|dsl|schema)$'))"
+  action: ASK
+  reason: Core/DSL file modification requires confirmation.
+  alternative: Work on net-new files only, or confirm core changes are in scope.
+
+# GitHub identity enforcement (ENSURE example)
+# Requires a check script at ~/.signet/checks/gh-identity-matches-remote
+# The script inspects the git remote URL and compares to the active gh user.
+- name: github_identity_guard
+  tool_pattern: "^Bash$"
+  conditions:
+    - "any_of(parameters, 'git push', 'git pull', 'git fetch', 'git clone')"
+  action: ENSURE
+  reason: Git remote operations must use the correct GitHub identity.
+  alternative: "Run 'gh auth switch --user <correct_user>' to match the remote's org."
+  ensure:
+    check: gh-identity-matches-remote
+    timeout: 15
+    message: "GitHub identity mismatch. Run: gh auth switch --user <correct_user>"
+"#.to_string()
 }
 
 // --- Helpers ---
@@ -1664,14 +1749,12 @@ mod self_protection_tests {
         // Normal Bash
         let call = make_call("Bash", serde_json::json!({"command": "ls -la"}));
         assert_eq!(evaluate(&call, &policy, None).decision, Decision::Allow);
-        // Normal Write without vault → ASK (require_plan_before_code fires, no vault = no plan)
+        // Normal Write — allowed (require_plan_before_code moved to sample/user rules)
         let call = make_call("Write", serde_json::json!({
             "file_path": "/home/user/code/main.rs",
             "content": "fn main() {}"
         }));
-        let result = evaluate(&call, &policy, None);
-        assert_eq!(result.decision, Decision::Ask);
-        assert_eq!(result.matched_rule.as_deref(), Some("require_plan_before_code"));
+        assert_eq!(evaluate(&call, &policy, None).decision, Decision::Allow);
         // Normal Read — not matched by Write/Edit/Bash patterns
         let call = make_call("Read", serde_json::json!({"file_path": "/tmp/foo"}));
         assert_eq!(evaluate(&call, &policy, None).decision, Decision::Allow);
@@ -2221,11 +2304,11 @@ mod gate_ensure_tests {
     }
 
     #[test]
-    fn test_github_identity_guard_unlocked_in_default() {
+    fn test_github_identity_guard_not_in_default() {
+        // github_identity_guard was moved to sample.yaml (user rule, not system default)
         let policy = default_policy();
         let guard = policy.rules.iter().find(|r| r.name == "github_identity_guard");
-        assert!(guard.is_some(), "github_identity_guard should be in default_policy");
-        assert!(!guard.unwrap().locked, "github_identity_guard should be unlocked");
+        assert!(guard.is_none(), "github_identity_guard should NOT be in default_policy");
     }
 
     #[test]
@@ -2384,5 +2467,109 @@ rules:
         let config2: PolicyConfig = serde_yaml::from_str(&serialized).unwrap();
         assert_eq!(config2.rules[0].action, Decision::Gate);
         assert_eq!(config2.rules[1].action, Decision::Ensure);
+    }
+
+    #[test]
+    fn test_merge_rules_order() {
+        let system = vec![
+            PolicyRule { name: "locked1".into(), tool_pattern: ".*".into(), conditions: vec![], action: Decision::Deny, reason: None, alternative: None, locked: true, gate: None, ensure: None },
+            PolicyRule { name: "sys_default".into(), tool_pattern: "^Bash$".into(), conditions: vec!["contains(parameters, 'rm ')".into()], action: Decision::Deny, reason: None, alternative: None, locked: false, gate: None, ensure: None },
+        ];
+        let user = vec![
+            PolicyRule { name: "user_rule".into(), tool_pattern: ".*".into(), conditions: vec![], action: Decision::Ask, reason: None, alternative: None, locked: false, gate: None, ensure: None },
+        ];
+        let merged = merge_rules(&system, &user);
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[0].name, "locked1");    // locked first
+        assert_eq!(merged[1].name, "user_rule");  // user rules second
+        assert_eq!(merged[2].name, "sys_default"); // system defaults last
+    }
+
+    #[test]
+    fn test_user_rule_overrides_system_default() {
+        // User rule for block_rm as ASK should match before system block_rm as DENY
+        let system = vec![
+            PolicyRule { name: "protect".into(), tool_pattern: ".*".into(), conditions: vec!["contains(parameters, '.signet/')".into()], action: Decision::Deny, reason: None, alternative: None, locked: true, gate: None, ensure: None },
+            PolicyRule { name: "block_rm".into(), tool_pattern: "^Bash$".into(), conditions: vec!["contains(parameters, 'rm ')".into()], action: Decision::Deny, reason: Some("System default".into()), alternative: None, locked: false, gate: None, ensure: None },
+        ];
+        let user = vec![
+            PolicyRule { name: "block_rm_override".into(), tool_pattern: "^Bash$".into(), conditions: vec!["contains(parameters, 'rm ')".into()], action: Decision::Ask, reason: Some("User override".into()), alternative: None, locked: false, gate: None, ensure: None },
+        ];
+        let merged = merge_rules(&system, &user);
+        let policy = CompiledPolicy::from_config(&PolicyConfig { version: 1, default_action: Decision::Allow, rules: merged });
+        let call = make_call("Bash", serde_json::json!({"command": "rm foo.txt"}));
+        let result = evaluate(&call, &policy, None);
+        assert_eq!(result.decision, Decision::Ask, "User override should take precedence");
+        assert_eq!(result.matched_rule.as_deref(), Some("block_rm_override"));
+    }
+
+    #[test]
+    fn test_load_merged_policy_missing_rules_file() {
+        // Should work fine with just policy.yaml, no rules.yaml
+        let dir = tempfile::tempdir().unwrap();
+        let policy_path = dir.path().join("policy.yaml");
+        let rules_path = dir.path().join("rules.yaml");
+        let config = PolicyConfig {
+            version: 1, default_action: Decision::Allow,
+            rules: vec![PolicyRule { name: "test".into(), tool_pattern: ".*".into(), conditions: vec![], action: Decision::Deny, reason: None, alternative: None, locked: false, gate: None, ensure: None }],
+        };
+        std::fs::write(&policy_path, serde_yaml::to_string(&config).unwrap()).unwrap();
+        let merged = load_merged_policy(&policy_path, &rules_path);
+        assert_eq!(merged.rules.len(), 1);
+        assert_eq!(merged.rules[0].name, "test");
+    }
+
+    #[test]
+    fn test_load_merged_policy_with_user_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let policy_path = dir.path().join("policy.yaml");
+        let rules_path = dir.path().join("rules.yaml");
+
+        // System policy with locked + unlocked
+        let config = PolicyConfig {
+            version: 1, default_action: Decision::Allow,
+            rules: vec![
+                PolicyRule { name: "locked".into(), tool_pattern: ".*".into(), conditions: vec![], action: Decision::Deny, reason: None, alternative: None, locked: true, gate: None, ensure: None },
+                PolicyRule { name: "sys".into(), tool_pattern: ".*".into(), conditions: vec![], action: Decision::Allow, reason: None, alternative: None, locked: false, gate: None, ensure: None },
+            ],
+        };
+        std::fs::write(&policy_path, serde_yaml::to_string(&config).unwrap()).unwrap();
+
+        // User rules as bare list
+        let user_rules = vec![
+            PolicyRule { name: "my_rule".into(), tool_pattern: "^Bash$".into(), conditions: vec![], action: Decision::Ask, reason: None, alternative: None, locked: false, gate: None, ensure: None },
+        ];
+        std::fs::write(&rules_path, serde_yaml::to_string(&user_rules).unwrap()).unwrap();
+
+        let merged = load_merged_policy(&policy_path, &rules_path);
+        assert_eq!(merged.rules.len(), 3);
+        assert_eq!(merged.rules[0].name, "locked");  // locked first
+        assert_eq!(merged.rules[1].name, "my_rule");  // user second
+        assert_eq!(merged.rules[2].name, "sys");       // system last
+    }
+
+    #[test]
+    fn test_system_default_rules_count() {
+        let defaults = system_default_rules();
+        assert_eq!(defaults.len(), 6, "Should have exactly 6 universal safe defaults");
+        assert!(defaults.iter().all(|r| !r.locked), "System defaults should all be unlocked");
+    }
+
+    #[test]
+    fn test_default_policy_no_opinionated_rules() {
+        let policy = default_policy();
+        assert!(policy.rules.iter().all(|r| r.name != "require_plan_before_code"), "require_plan_before_code should not be in defaults");
+        assert!(policy.rules.iter().all(|r| r.name != "protect_core_files"), "protect_core_files should not be in defaults");
+        assert!(policy.rules.iter().all(|r| r.name != "github_identity_guard"), "github_identity_guard should not be in defaults");
+    }
+
+    #[test]
+    fn test_sample_yaml_parseable() {
+        let yaml = sample_yaml();
+        let rules: Vec<PolicyRule> = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(rules.len(), 3);
+        assert_eq!(rules[0].name, "require_plan_before_code");
+        assert_eq!(rules[1].name, "protect_core_files");
+        assert_eq!(rules[2].name, "github_identity_guard");
     }
 }

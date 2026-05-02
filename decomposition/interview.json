@@ -1,0 +1,136 @@
+{
+  "risks": [
+    "R1: Re-signing after --fix requires vault access. If vault is locked, partially corrupted, or requires interactive authentication, the write-then-resign sequence can leave policy in an unsigned (and therefore potentially unenforced) state. Needs atomic write-or-rollback semantics.",
+    "R2: 'Changes scoped to src/main.rs only' contradicts 'New features need integration tests in tests/integration_cli.rs'. The SOP mandates new integration tests, but the constraint says main.rs only. An engineer following the constraint literally will ship without tests; one following the SOP will touch a second file. This will cause review churn.",
+    "R3: Idempotency requirement (C014) for --fix is underspecified. If fix_policy() is called on an already-fixed policy and the re-sign produces a different signature (e.g., timestamp-dependent signatures), the file will be modified on every invocation — violating idempotency at the file-content level even if policy semantics are unchanged.",
+    "R4: The enable command clearing 'all session disables' may destroy state that another running process or concurrent session depends on. No concurrency/locking mechanism is described for the disable/pause state files.",
+    "R5: fix_policy() is described as already existing in policy.rs, but its return type and error semantics are unspecified here. If it returns Result<Policy> vs. mutates in place vs. returns a diff, the CLI integration strategy differs fundamentally. An engineer must reverse-engineer the API.",
+    "R6: --dry-run 'prints what would change' requires a diff representation. If fix_policy() doesn't expose a structured diff (before/after or change list), the CLI must either call fix_policy() and diff against the original (expensive, may have side effects) or the function must be extended — which violates the main.rs-only constraint.",
+    "R7: 'Must not fix structural errors — only mechanical clamping (C016)' — if fix_policy() already handles structural errors internally, the CLI has no way to filter what it fixes without modifying policy.rs, again violating the scoping constraint.",
+    "R8: Status command must 'show enforcement overrides even without a vault (C019)'. If vault absence means certain state queries (e.g., pause_until_file()) fail or return misleading defaults, status output could be incorrect rather than gracefully degraded."
+  ],
+  "ambiguities": [
+    "A1: What is 'mechanical clamping' (C016)? The term is domain-specific and not defined in this spec. Different engineers will draw different lines between 'structural errors' and 'mechanical clamping', leading to inconsistent fix behavior.",
+    "A2: --dry-run output format is unspecified. Should it emit a unified diff of the policy file? A human-readable summary? JSON for machine consumption? The existing CLI output style is referenced but not documented here.",
+    "A3: 'Omit sections when nothing is active' in status — what constitutes a 'section'? Is each bullet (global disable, session disables, global pause, per-rule pauses) its own section, or are they grouped? What is the exact output format when everything is clean — empty output, or a single 'All enforcement active' message?",
+    "A4: 'Reports what was cleared' for enable — what level of detail? File paths? Session IDs? Count only? The reporting format is unspecified.",
+    "A5: The relationship between --fix and --dry-run flags is ambiguous: is --dry-run a modifier to --fix (i.e., --fix --dry-run), or can --dry-run be used standalone as an alias for 'show what --fix would do'? Spec says 'only valid with --fix' but doesn't specify the error behavior when --dry-run is passed alone.",
+    "A6: 'Re-signs if vault exists' — what does 'exists' mean? Vault directory exists? Vault is initialized and unlocked? Vault key material is accessible? Each interpretation produces different behavior.",
+    "A7: Exit codes for the new subcommand behaviors are unspecified. Does validate --fix return non-zero if fixes were applied? If no fixes needed? If --dry-run found issues? The SOP says 'exit code always 0 in hook mode' but these are interactive CLI commands.",
+    "A8: Whether enable with --session flag behavior changes at all, or only the no-flag case is modified. The spec only describes the no-flag case."
+  ],
+  "questions": [
+    "Q1: Can you provide the signature of fix_policy() from policy.rs? Specifically: does it return a diff/changeset, a new Policy object, or mutate in place? This determines the entire --dry-run implementation strategy.",
+    "Q2: What are the exact semantics of constraints C014–C019 in constraints.yaml? The spec references them but doesn't inline them. C016 ('mechanical clamping' vs. structural) is load-bearing for correctness.",
+    "Q3: Is the 'changes scoped to src/main.rs only' constraint absolute, or does it permit adding integration tests in tests/integration_cli.rs as required by the SOP? These two directives contradict.",
+    "Q4: What should validate --fix exit code be? 0 = success (fixes applied or none needed), 1 = fixes applied (to signal change), 2 = unfixable errors remain? This matters for CI pipeline integration.",
+    "Q5: For --dry-run output, should it follow an existing output pattern in the codebase, or is there a preferred format (human text, JSON, unified diff)?",
+    "Q6: Does fix_policy() already distinguish between structural errors and mechanical clamping, or must the CLI add filtering logic? If filtering is needed, this likely requires policy.rs changes, violating the scoping constraint.",
+    "Q7: For the enable command: should clearing all session disables require confirmation, given it affects potentially multiple independent sessions? Or is this always a forced operation?",
+    "Q8: When status shows pause expiry, what time format/timezone? Relative ('expires in 5m') or absolute ('expires at 2024-01-15T10:30:00Z')?"
+  ],
+  "assumptions": [
+    "AS1: The scoping constraint 'main.rs only' is interpreted to also permit tests/integration_cli.rs, since the SOP explicitly requires integration tests and no task is done without them.",
+    "AS2: fix_policy() returns a new Policy object (not mutation), allowing --dry-run to call it, diff against the original, and discard the result without side effects.",
+    "AS3: 'Mechanical clamping' means numeric/threshold value corrections (e.g., clamping scores to valid ranges) as opposed to structural issues (missing required fields, schema violations, broken references).",
+    "AS4: --dry-run without --fix produces a clear CLI error ('--dry-run requires --fix') and exits with a non-zero code.",
+    "AS5: 'Vault exists' means the vault directory exists AND is initialized (has key material), not merely that the directory path is present.",
+    "AS6: Re-signing failure after --fix is a hard error that rolls back the policy file write, not a warning that leaves an unsigned policy on disk.",
+    "AS7: Exit codes for interactive commands follow standard convention: 0 = success/no changes needed, 1 = error, and --fix returns 0 whether it applied fixes or found none to apply.",
+    "AS8: Status output follows existing CLI patterns in main.rs (assumed to be plain text with section headers), not JSON or structured output."
+  ],
+  "acceptance_criteria": [
+    "AC1: `signet-eval validate --fix` on a policy with mechanical issues writes a corrected policy file and re-signs it if a vault is present. The resulting policy passes `signet-eval validate` with no diagnostics.",
+    "AC2: `signet-eval validate --fix` on an already-correct policy produces no file writes and no signature changes (idempotency — C014).",
+    "AC3: `signet-eval validate --fix --dry-run` prints the changes that would be made but does NOT modify any files on disk. File timestamps and contents are unchanged after execution.",
+    "AC4: `signet-eval validate --dry-run` without `--fix` produces a user-facing error and non-zero exit code.",
+    "AC5: `signet-eval validate --fix` does NOT attempt to fix structural errors (C016). Structural errors are still reported as diagnostics requiring manual intervention.",
+    "AC6: `signet-eval enable` (no --session flag) clears the global disable state AND all per-session disable states. Output lists each cleared override.",
+    "AC7: `signet-eval enable` when nothing is disabled prints exactly 'Not currently disabled.' and exits 0.",
+    "AC8: `signet-eval status` displays global disable state, disabled sessions, global pause with expiry time, and per-rule/per-session pauses when any are active.",
+    "AC9: `signet-eval status` omits sections for which no overrides are active (no empty 'Disabled sessions: none' lines).",
+    "AC10: `signet-eval status` works correctly and shows enforcement overrides even when no vault is present (C019).",
+    "AC11: All 128 existing tests pass (`cargo test` green).",
+    "AC12: New integration tests exist in tests/integration_cli.rs covering: --fix applying changes, --fix idempotency, --dry-run no-write guarantee, --dry-run without --fix error, enable clearing all overrides, enable when nothing disabled, status with active overrides, status with no overrides, status without vault.",
+    "AC13: No `unsafe` code introduced. No `unwrap()` on user-input-derived paths.",
+    "AC14: `signet-eval validate --fix` without a vault writes the corrected policy but skips re-signing (does not error)."
+  ],
+  "user_answers": {
+    "Q1: Can you provide the signature of fix_policy() from policy.rs? Specifically: does it return a diff/changeset, a new Policy object, or mutate in place? This determines the entire --dry-run implementation strategy.": "AS2: fix_policy() returns a new Policy object (not mutation), allowing --dry-run to call it, diff against the original, and discard the result without side effects.",
+    "Q2: What are the exact semantics of constraints C014–C019 in constraints.yaml? The spec references them but doesn't inline them. C016 ('mechanical clamping' vs. structural) is load-bearing for correctness.": "AS3: 'Mechanical clamping' means numeric/threshold value corrections (e.g., clamping scores to valid ranges) as opposed to structural issues (missing required fields, schema violations, broken references).",
+    "Q3: Is the 'changes scoped to src/main.rs only' constraint absolute, or does it permit adding integration tests in tests/integration_cli.rs as required by the SOP? These two directives contradict.": "AS1: The scoping constraint 'main.rs only' is interpreted to also permit tests/integration_cli.rs, since the SOP explicitly requires integration tests and no task is done without them.",
+    "Q4: What should validate --fix exit code be? 0 = success (fixes applied or none needed), 1 = fixes applied (to signal change), 2 = unfixable errors remain? This matters for CI pipeline integration.": "AS7: Exit codes for interactive commands follow standard convention: 0 = success/no changes needed, 1 = error, and --fix returns 0 whether it applied fixes or found none to apply.",
+    "Q5: For --dry-run output, should it follow an existing output pattern in the codebase, or is there a preferred format (human text, JSON, unified diff)?": "AS8: Status output follows existing CLI patterns in main.rs (assumed to be plain text with section headers), not JSON or structured output.",
+    "Q6: Does fix_policy() already distinguish between structural errors and mechanical clamping, or must the CLI add filtering logic? If filtering is needed, this likely requires policy.rs changes, violating the scoping constraint.": "AS1: The scoping constraint 'main.rs only' is interpreted to also permit tests/integration_cli.rs, since the SOP explicitly requires integration tests and no task is done without them.",
+    "Q7: For the enable command: should clearing all session disables require confirmation, given it affects potentially multiple independent sessions? Or is this always a forced operation?": "AS7: Exit codes for interactive commands follow standard convention: 0 = success/no changes needed, 1 = error, and --fix returns 0 whether it applied fixes or found none to apply.",
+    "Q8: When status shows pause expiry, what time format/timezone? Relative ('expires in 5m') or absolute ('expires at 2024-01-15T10:30:00Z')?": "AS8: Status output follows existing CLI patterns in main.rs (assumed to be plain text with section headers), not JSON or structured output."
+  },
+  "approved": true,
+  "audited_answers": [
+    {
+      "question_id": "q_000",
+      "answer": "AS2: fix_policy() returns a new Policy object (not mutation), allowing --dry-run to call it, diff against the original, and discard the result without side effects.",
+      "source": "cli_approve",
+      "confidence": 0.2777777777777778,
+      "timestamp": "2026-04-02T05:44:13.474655+00:00",
+      "matched_assumption": null
+    },
+    {
+      "question_id": "q_001",
+      "answer": "AS3: 'Mechanical clamping' means numeric/threshold value corrections (e.g., clamping scores to valid ranges) as opposed to structural issues (missing required fields, schema violations, broken references).",
+      "source": "cli_approve",
+      "confidence": 0.19047619047619047,
+      "timestamp": "2026-04-02T05:44:13.474857+00:00",
+      "matched_assumption": null
+    },
+    {
+      "question_id": "q_002",
+      "answer": "AS1: The scoping constraint 'main.rs only' is interpreted to also permit tests/integration_cli.rs, since the SOP explicitly requires integration tests and no task is done without them.",
+      "source": "cli_approve",
+      "confidence": 0.35294117647058826,
+      "timestamp": "2026-04-02T05:44:13.474862+00:00",
+      "matched_assumption": null
+    },
+    {
+      "question_id": "q_003",
+      "answer": "AS7: Exit codes for interactive commands follow standard convention: 0 = success/no changes needed, 1 = error, and --fix returns 0 whether it applied fixes or found none to apply.",
+      "source": "cli_approve",
+      "confidence": 0.391304347826087,
+      "timestamp": "2026-04-02T05:44:13.474865+00:00",
+      "matched_assumption": null
+    },
+    {
+      "question_id": "q_004",
+      "answer": "AS8: Status output follows existing CLI patterns in main.rs (assumed to be plain text with section headers), not JSON or structured output.",
+      "source": "cli_approve",
+      "confidence": 0.26666666666666666,
+      "timestamp": "2026-04-02T05:44:13.474868+00:00",
+      "matched_assumption": null
+    },
+    {
+      "question_id": "q_005",
+      "answer": "AS1: The scoping constraint 'main.rs only' is interpreted to also permit tests/integration_cli.rs, since the SOP explicitly requires integration tests and no task is done without them.",
+      "source": "cli_approve",
+      "confidence": 0.15,
+      "timestamp": "2026-04-02T05:44:13.474870+00:00",
+      "matched_assumption": null
+    },
+    {
+      "question_id": "q_006",
+      "answer": "AS7: Exit codes for interactive commands follow standard convention: 0 = success/no changes needed, 1 = error, and --fix returns 0 whether it applied fixes or found none to apply.",
+      "source": "cli_approve",
+      "confidence": 0.5,
+      "timestamp": "2026-04-02T05:44:13.474873+00:00",
+      "matched_assumption": null
+    },
+    {
+      "question_id": "q_007",
+      "answer": "AS8: Status output follows existing CLI patterns in main.rs (assumed to be plain text with section headers), not JSON or structured output.",
+      "source": "cli_approve",
+      "confidence": 0.5,
+      "timestamp": "2026-04-02T05:44:13.474876+00:00",
+      "matched_assumption": null
+    }
+  ],
+  "processing_register": "rigorous-analytical"
+}

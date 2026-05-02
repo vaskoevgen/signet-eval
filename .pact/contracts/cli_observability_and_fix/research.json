@@ -1,0 +1,107 @@
+{
+  "task_summary": "Define the interface contract for 'CLI Observability and Auto-Fix for signet-eval' — a single-module extension to src/main.rs adding three cohesive features: (1) validate --fix/--dry-run with idempotent policy correction and optional vault re-signing, (2) enable command that clears all override states, (3) status command rendering enforcement state. Must conform to the canonical type registry, Rust 2021 stable toolchain, no unsafe code, deterministic evaluation, and exit-code-0 in hook mode.",
+  "findings": [
+    {
+      "topic": "CLI flag composition and mutual exclusivity in clap",
+      "finding": "clap's derive API supports `conflicts_with`, `requires`, and `group` attributes to enforce flag constraints at parse time. The spec requires --dry-run to be a hard error (exit 1) without --fix. This is best modeled as `requires = \"fix\"` on the dry_run field, letting clap emit the usage error before handler code runs. The ValidateMode enum (DiagnoseOnly, Fix, DryRun) should be derived post-parse from the boolean flag combination, not exposed as a clap value_enum, since --dry-run modifies --fix rather than being a standalone mode.",
+      "source": "clap 4.x derive documentation; established pattern in ripgrep, cargo-edit",
+      "relevance": "Directly governs how validate subcommand flags are parsed and mapped to ValidateMode",
+      "confidence": 0.95
+    },
+    {
+      "topic": "Idempotent file rewrite with atomic write + rollback",
+      "finding": "The canonical Rust pattern for safe file rewrite is: write to a tempfile in the same directory (same filesystem), then rename atomically. For the --fix path with vault re-signing, the rollback-on-signing-failure requirement means: (1) write fixed policy to tempfile, (2) attempt re-sign, (3) on success rename both; on failure remove tempfile and leave original untouched. The `tempfile` crate's `NamedTempFile::persist()` provides this. Idempotency (C014) is satisfied because fix_policy() on an already-fixed policy yields has_changes=false, causing early exit 0.",
+      "source": "tempfile crate docs; POSIX rename(2) atomicity guarantees; Rust std::fs::rename",
+      "relevance": "Critical for the --fix write path and rollback semantics",
+      "confidence": 0.93
+    },
+    {
+      "topic": "Diff rendering for --dry-run output",
+      "finding": "Human-readable diff for policy changes has two viable approaches: (1) unified-diff of serialized TOML/YAML text (using `similar` crate's TextDiff), (2) structured change list from FixChangeList rendered as field-path: old → new. The spec says 'human-readable diff' and the type registry provides FixChange with field_path/old_value/new_value. The structured approach is more deterministic and aligns with the type model. A unified text diff can supplement but should not replace the structured output. Keep rendering side-effect-free — format to String, then single write to stdout.",
+      "source": "similar crate; cargo-deny output patterns; existing CLI output style in main.rs",
+      "relevance": "Defines the --dry-run output contract",
+      "confidence": 0.88
+    },
+    {
+      "topic": "Error handling without unwrap() on user-input paths",
+      "finding": "The project standard prohibits unwrap() on user-input paths. For this module, fallible operations include: policy file read, policy parse, vault detection (is directory present), vault signing, file write, pause/disable state file reads. All should propagate via Result<T, E> with a module-local error type or the project's existing error enum. Map to CliExitCode at the top-level match arm. The pattern `match result { Ok(v) => v, Err(e) => { eprintln!(...); return CliExitCode::InternalError; } }` is idiomatic for CLI dispatch without unwrap.",
+      "source": "Rust API guidelines (C-VALIDATE); project operating procedures",
+      "relevance": "Directly required by project standards; governs every I/O call site",
+      "confidence": 0.97
+    },
+    {
+      "topic": "Vault-optional operation pattern (C019)",
+      "finding": "The OptionalVault type (Option<Vault>) must be resolved early: probe for vault directory, construct Some(Vault{..., initialized: true}) or None. All downstream logic branches on Option rather than attempting vault operations unconditionally. For --fix: None → skip re-signing, print notice. For status: None → vault_present=false in EnforcementState, omit vault-related section. This avoids the common pitfall of assuming vault presence and panicking on missing paths.",
+      "source": "Type registry (OptionalVault); spec constraint C019",
+      "relevance": "Affects validate --fix signing path and status rendering",
+      "confidence": 0.95
+    },
+    {
+      "topic": "Exit code semantics in CLI vs hook mode",
+      "finding": "The spec requires exit code always 0 in hook mode. The CliExitCode enum has Success(0), ValidationFailure(1), UsageError(1), InternalError(1). In hook mode, all variants must collapse to 0. This is best handled at the outermost dispatch: if hook_mode { process::exit(0) } else { process::exit(code as i32) }. The individual command handlers should return CliExitCode faithfully; the hook-mode flattening is a cross-cutting concern applied once.",
+      "source": "Project operating procedures; git hook conventions",
+      "relevance": "Governs the exit code contract for all three features",
+      "confidence": 0.94
+    },
+    {
+      "topic": "enable command: clearing all overrides atomically",
+      "finding": "The enable command must clear global disable AND all per-session disables. Two pitfalls: (1) TOCTOU — session list changes between list_disabled_sessions() and clearing each; mitigated by treating clear-of-already-cleared as a no-op (idempotent). (2) Partial failure — if clearing session N fails after sessions 0..N-1 succeeded, the spec does not mention rollback, so best-effort with accumulated errors reported as diagnostics is appropriate. The EnableResult type captures what was actually cleared, supporting accurate output.",
+      "source": "Spec for enable command; EnableResult/ClearedOverrideList in type registry",
+      "relevance": "Directly defines enable command behavior and edge cases",
+      "confidence": 0.9
+    },
+    {
+      "topic": "Status output: section-based rendering with omission of empty sections",
+      "finding": "The spec requires plain-text sections with headers matching existing CLI output patterns, omitting sections with no active overrides. The EnforcementState struct provides all data. Rendering pattern: build a Vec<(header, body_lines)>, filter out entries with empty body, join with blank-line separators. This is deterministic and testable via string comparison in integration tests. Common pitfall: trailing newlines or inconsistent header casing breaking snapshot tests.",
+      "source": "Spec for status command; existing CLI output patterns in main.rs",
+      "relevance": "Defines the status output contract and testability approach",
+      "confidence": 0.89
+    },
+    {
+      "topic": "Type registry fidelity: FixResult.has_changes as derived vs stored",
+      "finding": "The registry defines FixResult with both `changes: FixChangeList` and `has_changes: Bool`. In Rust, has_changes should be a method or computed at construction time (changes.is_empty() negated), not an independently settable field, to avoid inconsistency. However, since the registry mandates it as a struct field, implement it as a field but enforce the invariant in the constructor: `has_changes: !changes.is_empty()`. No public setter should allow divergence.",
+      "source": "Canonical type registry; Rust API guidelines (C-NEWTYPE)",
+      "relevance": "Prevents invariant violation in FixResult construction",
+      "confidence": 0.92
+    },
+    {
+      "topic": "Integration test patterns for CLI features",
+      "finding": "Integration tests in tests/integration_cli.rs should use `assert_cmd` or direct `Command::new(env!(\"CARGO_BIN_EXE_signet-eval\"))` to invoke the binary. Test categories: (1) --dry-run without --fix → exit 1 with usage error, (2) --fix on clean policy → exit 0 no changes, (3) --fix on fixable policy → writes corrected file, (4) --fix --dry-run → prints diff, no write, (5) --fix with vault → re-signs, (6) --fix with vault signing failure → rollback, (7) enable when nothing disabled → 'Not currently disabled.', (8) enable with overrides → clears and lists, (9) status with no overrides → minimal output, (10) status without vault → vault_present=false section omitted. Tempdir for each test to isolate filesystem state.",
+      "source": "assert_cmd crate; Rust CLI testing conventions; project test requirements",
+      "relevance": "Required by project verification standards; defines test coverage contract",
+      "confidence": 0.91
+    },
+    {
+      "topic": "DiagnosticSeverity and structural errors pass-through",
+      "finding": "The spec states structural errors are passed through as diagnostics unchanged — only mechanical clamping from fix_policy() is applied (C016). This means validate's existing diagnostic pipeline must remain untouched; fix_policy() operates on a separate path that only addresses fixable:true diagnostics. The Diagnostic.fixable field is the discriminant. fix_policy() must not suppress or alter diagnostics with fixable:false.",
+      "source": "Spec constraint C016; Diagnostic type in registry",
+      "relevance": "Critical separation of concerns between validation diagnostics and auto-fix",
+      "confidence": 0.93
+    }
+  ],
+  "recommended_approach": "Implement all three features as extensions to existing match arms in src/main.rs, with integration tests in tests/integration_cli.rs. Specific approach:\n\n**1. validate --fix / --dry-run:**\n- Add `fix: bool` and `dry_run: bool` fields to the Validate CLI variant with clap `requires` constraint (dry_run requires fix).\n- Post-parse, derive ValidateMode: if !fix → DiagnoseOnly, if fix && dry_run → DryRun, if fix && !dry_run → Fix.\n- In the Validate handler: run existing validation to produce DiagnosticList (unchanged). If mode is DiagnoseOnly, emit diagnostics and exit. If Fix or DryRun, call fix_policy(policy) → FixResult. If !has_changes, print \"No fixable issues\" and exit 0. If DryRun, render FixChangeList as structured diff (rule_id: field_path: old → new) and exit 0. If Fix, write to tempfile; if vault present attempt re-sign; on signing failure delete tempfile and exit InternalError; on success persist tempfile over original. Emit diagnostics with fixable=false unchanged.\n- fix_policy() is a pure function: Policy → FixResult. Construct FixResult with has_changes = !changes.is_empty().\n\n**2. enable clears all overrides:**\n- In the Enable handler (when no --session flag): call clear_global_disable(), then list_disabled_sessions() → SessionIdList, iterate and clear each. Accumulate ClearedOverride entries into ClearedOverrideList. Construct EnableResult. If !was_disabled, print \"Not currently disabled.\" and exit 0. Otherwise print each cleared item and exit 0.\n\n**3. status shows enforcement state:**\n- In the Status handler: probe vault presence → vault_present. Query is_paused_file(), pause_until_file(), list_pauses(), list_disabled_sessions(), global disable state. Construct EnforcementState. Render sections: \"Enforcement\" (globally disabled?), \"Disabled Sessions\" (list), \"Global Pause\" (until timestamp), \"Active Pauses\" (list with scope/rule/session/expiry). Omit sections with no active overrides. Use existing CLI output header style.\n\nAll error paths return appropriate CliExitCode; hook-mode flattening is handled at the outermost level. Types conform exactly to the canonical registry.",
+  "alternatives_considered": [
+    "Modeling ValidateMode as a clap value_enum directly: rejected because --dry-run is a modifier of --fix, not a standalone mode. Two boolean flags with a requires constraint are more ergonomic and match the spec's description.",
+    "Using unified text diff (similar crate) as the sole --dry-run output: rejected in favor of structured FixChange rendering as primary output, since the type registry already provides the structured model and it is more deterministic for testing. Text diff could supplement.",
+    "Creating a separate module (e.g., src/fix.rs, src/status.rs) for each feature: rejected per project preference to edit existing files over creating new ones. All logic extends existing match arms in main.rs.",
+    "Representing has_changes as a method rather than a field on FixResult: rejected because the canonical type registry mandates it as a struct field. Enforce the invariant at construction instead.",
+    "Implementing enable with transactional rollback if any session-clear fails: rejected as over-engineering given the spec does not require it and idempotent best-effort clearing is sufficient."
+  ],
+  "risks": [
+    "Rollback-on-signing-failure in --fix path requires careful ordering: if the tempfile is persisted before signing is attempted, rollback means restoring the original file, which is no longer atomic. Must sign before persisting the fixed file.",
+    "TOCTOU between list_disabled_sessions() and clearing each session: a new session could be disabled between enumeration and clear. Mitigated by idempotency — enable is best-effort on current state.",
+    "EnforcementState queries (is_paused_file, pause_until_file, list_pauses, list_disabled_sessions) may fail on I/O errors. Each must be handled gracefully, not unwrap'd, per project standards. Status must degrade to partial output rather than crash.",
+    "Existing 128 tests may assert exact CLI output strings. Adding new output sections or changing enable behavior could break snapshot-style assertions. Must verify existing test expectations before modifying output.",
+    "PauseEntry.expires_at uses OptionalInstant — if the system clock is unreliable or timezone-unaware, expiration comparisons could be incorrect. Status rendering should display raw timestamps without interpreting expiry."
+  ],
+  "compliance_notes": [
+    "C014 (Idempotency): fix_policy() on an already-fixed policy must return has_changes=false, causing exit 0 with no file write. Verified by integration test.",
+    "C016 (Structural errors pass-through): fix_policy() only applies mechanical clamping. Diagnostics with fixable=false are emitted unchanged. The fix path does not suppress or rewrite non-fixable diagnostics.",
+    "C019 (Vault-optional): status and validate --fix must operate correctly when no vault is present. OptionalVault is resolved by probing the filesystem; None causes re-signing to be skipped (with notice) and vault_present=false in EnforcementState.",
+    "No unsafe code: all implementations use safe Rust exclusively.",
+    "No unwrap() on user-input paths: all file I/O, parsing, and state queries use Result propagation with explicit error handling.",
+    "Exit code 0 in hook mode: CliExitCode is returned faithfully from handlers; hook-mode flattening to 0 is applied at the outermost dispatch layer.",
+    "Policy evaluation deterministic and side-effect-free: fix_policy() is a pure function over Policy → FixResult. File writes are the caller's responsibility in the CLI handler.",
+    "Integration tests required in tests/integration_cli.rs per project verification standards."
+  ]
+}

@@ -45,15 +45,14 @@ fn test_hook_denies_rm() {
 
 #[test]
 fn test_hook_asks_force_push() {
-    // block_force_push (Ask) fires before github_identity_guard (unlocked, at end of rules).
     let (out, code) = run_hook(r#"{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}"#);
     assert_eq!(code, 0);
     assert_eq!(parse_decision(&out), "ask");
 }
 
 #[test]
-fn test_hook_allows_git_push_no_script() {
-    // github_identity_guard is unlocked + ensure script is missing → allow gracefully.
+fn test_hook_allows_git_push() {
+    // github_identity_guard moved to user rules — default policy allows git push.
     let (out, code) = run_hook(r#"{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}"#);
     assert_eq!(code, 0);
     assert_eq!(parse_decision(&out), "allow");
@@ -75,11 +74,10 @@ fn test_hook_allows_read() {
 
 #[test]
 fn test_hook_denies_credential_write() {
-    // Without a plan logged, require_plan_before_code fires first (ask).
-    // The credential write deny would fire after a plan is present.
+    // block_credential_writes fires — denies writing to .env files.
     let (out, code) = run_hook(r#"{"tool_name":"Write","tool_input":{"file_path":"/app/.env","content":"SECRET=x"}}"#);
     assert_eq!(code, 0);
-    assert_eq!(parse_decision(&out), "ask");
+    assert_eq!(parse_decision(&out), "deny");
 }
 
 #[test]
@@ -195,10 +193,12 @@ fn test_hook_performance() {
 
 fn run_hook_with_policy(input: &str, policy_yaml: &str, signet_dir: &std::path::Path) -> (String, i32) {
     let policy_path = signet_dir.join("policy.yaml");
+    let rules_path = signet_dir.join("rules.yaml");
     std::fs::write(&policy_path, policy_yaml).unwrap();
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_signet-eval"))
-        .args(["--policy-path", policy_path.to_str().unwrap()])
+        .args(["--policy-path", policy_path.to_str().unwrap(),
+               "--rules-path", rules_path.to_str().unwrap()])
         .env("SIGNET_DIR", signet_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

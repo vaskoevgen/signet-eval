@@ -6,15 +6,15 @@ Deterministic policy enforcement for AI agent tool calls. Rust. Single binary.
 
 ```bash
 cargo build --release          # build
-cargo test                     # 128 tests (unit, integration, adversarial, self-protection)
+cargo test                     # 147 tests (unit, integration, adversarial, self-protection)
 cargo install --path .         # install to ~/.cargo/bin
 
 # Hook mode (default — reads stdin, writes stdout)
 echo '{"tool_name":"Bash","tool_input":{"command":"rm foo"}}' | signet-eval
 
 # CLI
-signet-eval init               # write default policy (with locked self-protection rules)
-signet-eval rules              # show rules (locked rules tagged)
+signet-eval init               # write system policy + sample.yaml (never touches rules.yaml)
+signet-eval rules              # show merged rules (LOCKED/USER/SYSTEM tagged)
 signet-eval validate           # check policy
 signet-eval validate --fix     # auto-fix clampable issues
 signet-eval validate --fix --dry-run  # preview fixes
@@ -26,7 +26,7 @@ signet-eval store <n> <v>      # store credential
 signet-eval delete <n>         # delete credential
 signet-eval log                # action log
 signet-eval reset-session      # clear spending
-signet-eval sign               # HMAC-sign policy
+signet-eval sign               # HMAC-sign policy + user rules
 signet-eval serve              # MCP management server (17 tools)
 signet-eval proxy              # MCP proxy
 ```
@@ -53,10 +53,11 @@ examples/
 ## Security Model
 
 - **Locked rules**: `locked: true` field on PolicyRule. MCP tools refuse to remove/edit/reorder locked rules. Unlocked rules cannot be reordered above locked rules. Self-protection rules ship locked by default.
-- **Self-protection**: 4 locked rules in `self_protection_rules()` (policy.rs) protect .signet/ directory, signet-eval binary, settings.json hook config, and signet processes. Hardcoded in `default_policy()` so even a missing/corrupted policy.yaml falls back to protected defaults.
+- **Split policy files**: System rules in `~/.signet/policy.yaml` (managed by `init`), user rules in `~/.signet/rules.yaml` (never touched by `init`). Eval order: locked self-protection → user rules → system defaults. MCP tools operate on rules.yaml only.
+- **Self-protection**: 8 locked rules in `self_protection_rules()` (policy.rs) protect .signet/ directory, checks/, vault ops, signet-eval binary, settings.json hook config, symlinks, signet processes, and preflight storage. Hardcoded in `default_policy()` so even a missing/corrupted policy.yaml falls back to protected defaults.
 - **Session key file encrypted** with device-specific key (machine ID + username via HKDF)
 - **Brute-force protection**: 5 attempts then 5-minute lockout (vault.rs)
-- **Policy HMAC integrity**: `signet-eval sign` writes HMAC sidecar, verified on every hook eval when vault exists. MCP mutations auto-sign after every change.
+- **Policy HMAC integrity**: `signet-eval sign` writes HMAC sidecars for both policy.yaml and rules.yaml, verified on every hook eval when vault exists. MCP mutations auto-sign after every change.
 - **Tier 3 credentials** use compartment key (separate from session key, derived via HKDF)
 - **Scoped credential access**: `request_capability()` enforces domain, purpose, amount cap, and one-time constraints
 - **No NLP, no network, no eval()** in the policy engine — regex and string comparison only

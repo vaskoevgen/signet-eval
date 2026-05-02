@@ -16,9 +16,13 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 
-    /// Path to policy file
+    /// Path to system policy file
     #[arg(long, default_value = "~/.signet/policy.yaml")]
     policy_path: String,
+
+    /// Path to user rules file
+    #[arg(long, default_value = "~/.signet/rules.yaml")]
+    rules_path: String,
 }
 
 #[derive(Subcommand)]
@@ -128,13 +132,13 @@ fn expand_home(path: &str) -> PathBuf {
 fn run() -> i32 {
     let cli = Cli::parse();
     let policy_path = expand_home(&cli.policy_path);
+    let rules_path = expand_home(&cli.rules_path);
 
     match cli.command {
         None | Some(Command::Eval) => {
             let v = vault::try_load_vault();
-            // If vault exists, verify policy HMAC — tampered files fall back to safe defaults.
-            // Without vault, policy.yaml is loaded as-is (no cryptographic verification).
-            // String matching is defense-in-depth, not a security boundary.
+            // If vault exists, verify HMAC for both policy files — tampered files fall back to safe defaults.
+            // Without vault, files are loaded as-is (no cryptographic verification).
             // HMAC (requires vault setup) is the real integrity guarantee.
             if let Some(ref vault) = v {
                 if !vault::verify_policy_integrity(vault.session_key(), &policy_path) {
@@ -142,21 +146,19 @@ fn run() -> i32 {
                     let compiled = policy::default_policy();
                     return hook::run_hook(&compiled, Some(vault));
                 }
+                // Verify rules.yaml HMAC if the file exists
+                if rules_path.exists() && !vault::verify_policy_integrity(vault.session_key(), &rules_path) {
+                    eprintln!("WARNING: User rules integrity check failed. Using safe defaults.");
+                    let compiled = policy::default_policy();
+                    return hook::run_hook(&compiled, Some(vault));
+                }
             }
-            let compiled = policy::load_policy(&policy_path);
+            let compiled = policy::load_merged_policy(&policy_path, &rules_path);
             hook::run_hook(&compiled, v.as_ref())
         }
         Some(Command::Init) => {
             let mut rules = policy::self_protection_rules();
-            rules.extend(vec![
-                policy::PolicyRule { name: "block_rm".into(), tool_pattern: "^Bash$".into(), conditions: vec!["contains(parameters, 'rm ')".into()], action: policy::Decision::Deny, locked: false, reason: Some("File deletion blocked.".into()), alternative: Some("Use 'trash <file>' (recoverable) or 'mv <file> /tmp/'.".into()), gate: None, ensure: None },
-                policy::PolicyRule { name: "block_force_push".into(), tool_pattern: "^Bash$".into(), conditions: vec!["any_of(parameters, 'push --force', 'push -f')".into()], action: policy::Decision::Ask, locked: false, reason: Some("Force push can overwrite others' work.".into()), alternative: Some("Use 'git push --force-with-lease' or push to a new branch.".into()), gate: None, ensure: None },
-                policy::PolicyRule { name: "block_destructive".into(), tool_pattern: "^Bash$".into(), conditions: vec!["or(contains_word(parameters, 'mkfs') || contains(parameters, 'dd if=') || contains(parameters, 'diskutil erase') || contains(parameters, 'wipefs'))".into()], action: policy::Decision::Deny, locked: false, reason: Some("Destructive disk ops blocked.".into()), alternative: Some("Write to a temp file first. Ask the user to execute disk operations directly.".into()), gate: None, ensure: None },
-                policy::PolicyRule { name: "block_piped_exec".into(), tool_pattern: "^Bash$".into(), conditions: vec!["any_of(parameters, 'curl', 'wget')".into(), "contains(parameters, '| sh')".into()], action: policy::Decision::Deny, locked: false, reason: Some("Piped remote execution blocked.".into()), alternative: Some("Download first: 'curl -o /tmp/script.sh <url>', then inspect with 'cat'. Let the user review.".into()), gate: None, ensure: None },
-                policy::PolicyRule { name: "block_credential_writes".into(), tool_pattern: "^(Write|Edit)$".into(), conditions: vec!["matches(file_path, '\\.(env|pem|key|secret|credentials)$')".into()], action: policy::Decision::Deny, locked: false, reason: Some("Writing to credential/secret files blocked.".into()), alternative: Some("Write to a '.example' file with placeholder values, then instruct the user to copy and fill in real credentials.".into()), gate: None, ensure: None },
-                policy::PolicyRule { name: "block_chmod_777".into(), tool_pattern: "^Bash$".into(), conditions: vec!["contains(parameters, 'chmod 777')".into()], action: policy::Decision::Ask, locked: false, reason: Some("chmod 777 grants world-readable/writable/executable access.".into()), alternative: Some("Use minimum permissions: 'chmod 755' for executables, 'chmod 644' for files, 'chmod 600' for secrets.".into()), gate: None, ensure: None },
-                policy::PolicyRule { name: "github_identity_guard".into(), tool_pattern: "^Bash$".into(), conditions: vec!["any_of(parameters, 'git push', 'git pull', 'git fetch', 'git clone')".into()], action: policy::Decision::Ensure, locked: false, reason: Some("Git remote operations must use the correct GitHub identity.".into()), alternative: Some("Run 'gh auth switch --user <correct_user>' to match the remote's org.".into()), gate: None, ensure: Some(policy::EnsureConfig { check: "gh-identity-matches-remote".into(), timeout: 15, message: "GitHub identity mismatch. Run: gh auth switch --user <correct_user>".into() }) },
-            ]);
+            rules.extend(policy::system_default_rules());
             let config = policy::PolicyConfig {
                 version: 1,
                 default_action: policy::Decision::Allow,
@@ -166,23 +168,35 @@ fn run() -> i32 {
             if let Some(parent) = policy_path.parent() {
                 std::fs::create_dir_all(parent).ok();
             }
+            // Write system policy
             match std::fs::write(&policy_path, &yaml) {
                 Ok(_) => {
-                    println!("Policy written to {}", policy_path.display());
-                    // Auto-sign if vault exists
-                    if let Some(v) = vault::try_load_vault() {
-                        match vault::sign_policy(v.session_key(), &policy_path) {
-                            Ok(_) => println!("Policy signed (HMAC verified on every eval)."),
-                            Err(e) => eprintln!("Warning: could not sign policy: {e}"),
-                        }
-                    } else {
-                        eprintln!("Warning: no vault. Run 'signet-eval setup' to enable HMAC verification.");
-                        eprintln!("Without vault, only hardcoded default rules are enforced.");
-                    }
-                    0
+                    println!("System policy written to {}", policy_path.display());
                 }
-                Err(e) => { eprintln!("Error: {e}"); 1 }
+                Err(e) => { eprintln!("Error writing policy: {e}"); return 1; }
             }
+            // Write sample.yaml (always overwritten — it's a reference, not user data)
+            let sample_path = policy_path.parent().unwrap().join("sample.yaml");
+            match std::fs::write(&sample_path, policy::sample_yaml()) {
+                Ok(_) => println!("Sample rules written to {}", sample_path.display()),
+                Err(e) => eprintln!("Warning: could not write sample.yaml: {e}"),
+            }
+            // Auto-sign if vault exists
+            if let Some(v) = vault::try_load_vault() {
+                match vault::sign_policy(v.session_key(), &policy_path) {
+                    Ok(_) => println!("Policy signed (HMAC verified on every eval)."),
+                    Err(e) => eprintln!("Warning: could not sign policy: {e}"),
+                }
+            } else {
+                eprintln!("Warning: no vault. Run 'signet-eval setup' to enable HMAC verification.");
+            }
+            // Hint about user rules (don't touch rules.yaml)
+            if !rules_path.exists() {
+                println!("Hint: create {} for custom rules (see sample.yaml for examples).", rules_path.display());
+            } else {
+                println!("User rules preserved at {}", rules_path.display());
+            }
+            0
         }
         Some(Command::Setup) => {
             if vault::vault_exists() {
@@ -278,28 +292,41 @@ fn run() -> i32 {
             }
         }
         Some(Command::Rules) => {
-            match policy::load_policy_config(&policy_path) {
-                Ok(config) => {
-                    println!("Policy: {} (v{})", policy_path.display(), config.version);
-                    println!("Default action: {:?}", config.default_action);
-                    println!("Rules: {}\n", config.rules.len());
-                    for rule in &config.rules {
-                        let action = format!("{:?}", rule.action).to_uppercase();
-                        let lock_tag = if rule.locked { " [LOCKED]" } else { "" };
-                        println!("  {} [{}]{}", rule.name, action, lock_tag);
-                        println!("    tool: {}", rule.tool_pattern);
-                        for cond in &rule.conditions {
-                            println!("    when: {cond}");
-                        }
-                        if let Some(reason) = &rule.reason {
-                            println!("    reason: {reason}");
-                        }
-                        println!();
-                    }
-                    0
-                }
-                Err(e) => { eprintln!("Error: {e}"); 1 }
+            let system_config = match policy::load_policy_config(&policy_path) {
+                Ok(config) => config,
+                Err(e) => { eprintln!("Error loading system policy: {e}"); return 1; }
+            };
+            let user_rules = policy::load_rules(&rules_path);
+            let merged = policy::merge_rules(&system_config.rules, &user_rules);
+            // Build a set of user rule names for labeling
+            let user_names: std::collections::HashSet<&str> = user_rules.iter().map(|r| r.name.as_str()).collect();
+
+            println!("System policy: {} (v{})", policy_path.display(), system_config.version);
+            if !user_rules.is_empty() {
+                println!("User rules: {} ({} rules)", rules_path.display(), user_rules.len());
             }
+            println!("Default action: {:?}", system_config.default_action);
+            println!("Rules: {} (eval order)\n", merged.len());
+            for rule in &merged {
+                let action = format!("{:?}", rule.action).to_uppercase();
+                let source = if rule.locked {
+                    " [LOCKED]"
+                } else if user_names.contains(rule.name.as_str()) {
+                    " [USER]"
+                } else {
+                    " [SYSTEM]"
+                };
+                println!("  {} [{}]{}", rule.name, action, source);
+                println!("    tool: {}", rule.tool_pattern);
+                for cond in &rule.conditions {
+                    println!("    when: {cond}");
+                }
+                if let Some(reason) = &rule.reason {
+                    println!("    reason: {reason}");
+                }
+                println!();
+            }
+            0
         }
         Some(Command::Log { limit }) => {
             match vault::try_load_vault() {
@@ -342,7 +369,7 @@ fn run() -> i32 {
                     std::process::exit(1);
                 }
             };
-            let compiled = policy::load_policy(&policy_path);
+            let compiled = policy::load_merged_policy(&policy_path, &rules_path);
             let v = vault::try_load_vault();
             let call = policy::ToolCall {
                 tool_name: input.tool_name,
@@ -388,10 +415,18 @@ fn run() -> i32 {
         Some(Command::Sign) => {
             match vault::try_load_vault() {
                 Some(v) => {
+                    let mut ok = true;
                     match vault::sign_policy(v.session_key(), &policy_path) {
-                        Ok(_) => { println!("Policy signed: {}", policy_path.with_extension("hmac").display()); 0 }
-                        Err(e) => { eprintln!("Error: {e}"); 1 }
+                        Ok(_) => println!("Policy signed: {}", policy_path.with_extension("hmac").display()),
+                        Err(e) => { eprintln!("Error signing policy: {e}"); ok = false; }
                     }
+                    if rules_path.exists() {
+                        match vault::sign_policy(v.session_key(), &rules_path) {
+                            Ok(_) => println!("Rules signed: {}", rules_path.with_extension("hmac").display()),
+                            Err(e) => { eprintln!("Error signing rules: {e}"); ok = false; }
+                        }
+                    }
+                    if ok { 0 } else { 1 }
                 }
                 None => { eprintln!("Vault not set up or locked (needed for signing key)."); 1 }
             }
@@ -409,13 +444,15 @@ fn run() -> i32 {
             }
         }
         Some(Command::Validate { fix, dry_run }) => {
+            let mut exit_code = 0;
+            // Validate system policy
+            println!("--- System policy: {} ---", policy_path.display());
             match policy::load_policy_config(&policy_path) {
                 Ok(mut config) => {
                     if fix {
                         let result = policy::fix_policy(&mut config);
                         if result.rules_removed.is_empty() && result.rules_modified.is_empty() {
                             println!("No auto-fixable issues found.");
-                            0
                         } else {
                             println!("{}", result.description);
                             if dry_run {
@@ -434,11 +471,10 @@ fn run() -> i32 {
                                     }
                                     Err(e) => {
                                         eprintln!("ERROR writing policy: {e}");
-                                        return 1;
+                                        exit_code = 1;
                                     }
                                 }
                             }
-                            0
                         }
                     } else {
                         let diagnostics = policy::validate_policy(&config);
@@ -451,7 +487,6 @@ fn run() -> i32 {
 
                         if errors.is_empty() && warnings.is_empty() {
                             println!("Policy valid: {} rules", config.rules.len());
-                            0
                         } else {
                             for e in &errors {
                                 eprintln!("ERROR [{}]: {}", e.rule_name, e.error);
@@ -461,12 +496,47 @@ fn run() -> i32 {
                                 eprintln!("WARN  [{}]: {}", w.rule_name, w.error);
                                 eprintln!("  Fix: {}", w.fix_hint);
                             }
-                            if errors.is_empty() { 0 } else { 1 }
+                            if !errors.is_empty() { exit_code = 1; }
                         }
                     }
                 }
-                Err(e) => { eprintln!("ERROR: {e}"); 1 }
+                Err(e) => { eprintln!("ERROR: {e}"); exit_code = 1; }
             }
+            // Validate user rules (if file exists)
+            if rules_path.exists() {
+                println!("\n--- User rules: {} ---", rules_path.display());
+                let user_rules = policy::load_rules(&rules_path);
+                if user_rules.is_empty() {
+                    println!("No user rules (or parse error).");
+                } else {
+                    let user_config = policy::PolicyConfig {
+                        version: 1,
+                        default_action: policy::Decision::Allow,
+                        rules: user_rules,
+                    };
+                    let diagnostics = policy::validate_policy(&user_config);
+                    let errors: Vec<_> = diagnostics.iter()
+                        .filter(|d| d.severity == policy::DiagnosticSeverity::Error)
+                        .collect();
+                    let warnings: Vec<_> = diagnostics.iter()
+                        .filter(|d| d.severity == policy::DiagnosticSeverity::Warning)
+                        .collect();
+                    if errors.is_empty() && warnings.is_empty() {
+                        println!("User rules valid: {} rules", user_config.rules.len());
+                    } else {
+                        for e in &errors {
+                            eprintln!("ERROR [{}]: {}", e.rule_name, e.error);
+                            eprintln!("  Fix: {}", e.fix_hint);
+                        }
+                        for w in &warnings {
+                            eprintln!("WARN  [{}]: {}", w.rule_name, w.error);
+                            eprintln!("  Fix: {}", w.fix_hint);
+                        }
+                        if !errors.is_empty() { exit_code = 1; }
+                    }
+                }
+            }
+            exit_code
         }
         #[cfg(feature = "mcp")]
         Some(Command::Serve) => {
@@ -535,15 +605,17 @@ fn run() -> i32 {
                 // Per-rule and/or per-session pause via pauses.json
                 // Validate rule name exists if specified
                 if let Some(ref rule_name) = rule {
-                    if let Ok(config) = policy::load_policy_config(&policy_path) {
-                        if !config.rules.iter().any(|r| r.name == *rule_name) {
-                            eprintln!("No rule named '{rule_name}'. Run 'signet-eval rules' to list.");
-                            return 1;
-                        }
-                        if config.rules.iter().any(|r| r.name == *rule_name && r.locked) {
-                            eprintln!("Cannot pause locked rule '{rule_name}'.");
-                            return 1;
-                        }
+                    // Check merged policy (system + user rules) for rule name
+                    let system_rules = policy::load_policy_config(&policy_path).map(|c| c.rules).unwrap_or_default();
+                    let user_rules = policy::load_rules(&rules_path);
+                    let merged = policy::merge_rules(&system_rules, &user_rules);
+                    if !merged.iter().any(|r| r.name == *rule_name) {
+                        eprintln!("No rule named '{rule_name}'. Run 'signet-eval rules' to list.");
+                        return 1;
+                    }
+                    if merged.iter().any(|r| r.name == *rule_name && r.locked) {
+                        eprintln!("Cannot pause locked rule '{rule_name}'.");
+                        return 1;
                     }
                 }
                 vault::add_pause(rule.as_deref(), until, session.as_deref());

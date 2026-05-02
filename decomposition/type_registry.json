@@ -1,0 +1,619 @@
+{
+  "types": [
+    {
+      "name": "String",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "UTF-8 string primitive.",
+      "owner_component": ""
+    },
+    {
+      "name": "Bool",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Boolean primitive.",
+      "owner_component": ""
+    },
+    {
+      "name": "u64",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Unsigned 64-bit integer primitive.",
+      "owner_component": ""
+    },
+    {
+      "name": "i32",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Signed 32-bit integer, used for process exit codes.",
+      "owner_component": ""
+    },
+    {
+      "name": "PathBuf",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Filesystem path (std::path::PathBuf).",
+      "owner_component": ""
+    },
+    {
+      "name": "Instant",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Wall-clock timestamp (e.g. chrono::DateTime<Utc> or std::time::SystemTime).",
+      "owner_component": ""
+    },
+    {
+      "name": "Policy",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "path",
+          "type_ref": "PathBuf",
+          "required": true,
+          "default": "",
+          "description": "Filesystem location from which the policy was loaded.",
+          "validators": []
+        },
+        {
+          "name": "rules",
+          "type_ref": "PolicyRuleList",
+          "required": true,
+          "default": "",
+          "description": "Ordered list of enforcement rules in this policy.",
+          "validators": []
+        },
+        {
+          "name": "raw_bytes",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Original serialized policy content for diffing.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Deserialized policy document governing evaluation constraints and rules.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "PolicyRule",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "id",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Unique rule identifier (e.g. 'C014').",
+          "validators": []
+        },
+        {
+          "name": "description",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Human-readable description of the rule.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "A single named enforcement rule within a Policy.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "PolicyRuleList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "PolicyRule",
+      "variants": [],
+      "inner_types": [],
+      "description": "Ordered collection of PolicyRule entries.",
+      "owner_component": ""
+    },
+    {
+      "name": "Vault",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "path",
+          "type_ref": "PathBuf",
+          "required": true,
+          "default": "",
+          "description": "Filesystem location of the vault directory.",
+          "validators": []
+        },
+        {
+          "name": "initialized",
+          "type_ref": "Bool",
+          "required": true,
+          "default": "",
+          "description": "Whether the vault has been initialized (keys present).",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Handle to the signing vault; may or may not be initialized on disk.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "OptionalVault",
+      "kind": "optional",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [
+        "Vault"
+      ],
+      "description": "An optionally-present Vault; None when vault directory does not exist.",
+      "owner_component": ""
+    },
+    {
+      "name": "Diagnostic",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "severity",
+          "type_ref": "DiagnosticSeverity",
+          "required": true,
+          "default": "",
+          "description": "Severity level of this diagnostic.",
+          "validators": []
+        },
+        {
+          "name": "rule_id",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Constraint ID this diagnostic pertains to (e.g. 'C016').",
+          "validators": []
+        },
+        {
+          "name": "message",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Human-readable diagnostic message.",
+          "validators": []
+        },
+        {
+          "name": "fixable",
+          "type_ref": "Bool",
+          "required": true,
+          "default": "",
+          "description": "True if this diagnostic is mechanically fixable (not structural).",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "A single validation diagnostic emitted by validate, with optional fix hint.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "DiagnosticSeverity",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "Error",
+        "Warning",
+        "Info"
+      ],
+      "inner_types": [],
+      "description": "Severity level of a validation diagnostic.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "DiagnosticList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "Diagnostic",
+      "variants": [],
+      "inner_types": [],
+      "description": "Ordered collection of Diagnostic entries from a validation pass.",
+      "owner_component": ""
+    },
+    {
+      "name": "FixResult",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "original",
+          "type_ref": "Policy",
+          "required": true,
+          "default": "",
+          "description": "The policy before fixes were applied.",
+          "validators": []
+        },
+        {
+          "name": "fixed",
+          "type_ref": "Policy",
+          "required": true,
+          "default": "",
+          "description": "The policy after mechanical clamping fixes.",
+          "validators": []
+        },
+        {
+          "name": "changes",
+          "type_ref": "FixChangeList",
+          "required": true,
+          "default": "",
+          "description": "List of individual changes applied.",
+          "validators": []
+        },
+        {
+          "name": "has_changes",
+          "type_ref": "Bool",
+          "required": true,
+          "default": "",
+          "description": "True if fixed differs from original (convenience flag).",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Result of calling fix_policy(): the corrected policy and a summary of changes.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "FixChange",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "rule_id",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Constraint ID that triggered this fix.",
+          "validators": []
+        },
+        {
+          "name": "field_path",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Dot-delimited path to the field that was changed.",
+          "validators": []
+        },
+        {
+          "name": "old_value",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Serialized previous value.",
+          "validators": []
+        },
+        {
+          "name": "new_value",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Serialized replacement value.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "A single mechanical change applied by fix_policy().",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "FixChangeList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "FixChange",
+      "variants": [],
+      "inner_types": [],
+      "description": "Ordered collection of FixChange entries.",
+      "owner_component": ""
+    },
+    {
+      "name": "ValidateMode",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "DiagnoseOnly",
+        "Fix",
+        "DryRun"
+      ],
+      "inner_types": [],
+      "description": "Operational mode for the validate command.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "SessionId",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Opaque string identifier for an evaluation session.",
+      "owner_component": ""
+    },
+    {
+      "name": "SessionIdList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "SessionId",
+      "variants": [],
+      "inner_types": [],
+      "description": "List of session identifiers.",
+      "owner_component": ""
+    },
+    {
+      "name": "PauseEntry",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "scope",
+          "type_ref": "PauseScope",
+          "required": true,
+          "default": "",
+          "description": "What this pause applies to.",
+          "validators": []
+        },
+        {
+          "name": "rule_id",
+          "type_ref": "OptionalString",
+          "required": false,
+          "default": "",
+          "description": "If scope is Rule or RuleSession, the rule ID.",
+          "validators": []
+        },
+        {
+          "name": "session_id",
+          "type_ref": "OptionalSessionId",
+          "required": false,
+          "default": "",
+          "description": "If scope is Session or RuleSession, the session ID.",
+          "validators": []
+        },
+        {
+          "name": "expires_at",
+          "type_ref": "OptionalInstant",
+          "required": false,
+          "default": "",
+          "description": "When this pause expires; None means indefinite.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "A single active pause record (global, per-rule, or per-session).",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "PauseScope",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "Global",
+        "Rule",
+        "Session",
+        "RuleSession"
+      ],
+      "inner_types": [],
+      "description": "Scope discriminant for a PauseEntry.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "PauseEntryList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "PauseEntry",
+      "variants": [],
+      "inner_types": [],
+      "description": "Ordered collection of active PauseEntry records.",
+      "owner_component": ""
+    },
+    {
+      "name": "OptionalString",
+      "kind": "optional",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [
+        "String"
+      ],
+      "description": "An optionally-present String value.",
+      "owner_component": ""
+    },
+    {
+      "name": "OptionalSessionId",
+      "kind": "optional",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [
+        "SessionId"
+      ],
+      "description": "An optionally-present SessionId.",
+      "owner_component": ""
+    },
+    {
+      "name": "OptionalInstant",
+      "kind": "optional",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [
+        "Instant"
+      ],
+      "description": "An optionally-present Instant (timestamp).",
+      "owner_component": ""
+    },
+    {
+      "name": "EnforcementState",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "globally_disabled",
+          "type_ref": "Bool",
+          "required": true,
+          "default": "",
+          "description": "True if enforcement is globally disabled.",
+          "validators": []
+        },
+        {
+          "name": "disabled_sessions",
+          "type_ref": "SessionIdList",
+          "required": true,
+          "default": "",
+          "description": "Sessions with enforcement individually disabled.",
+          "validators": []
+        },
+        {
+          "name": "global_pause",
+          "type_ref": "OptionalInstant",
+          "required": false,
+          "default": "",
+          "description": "If globally paused, the expiry instant; None if not paused.",
+          "validators": []
+        },
+        {
+          "name": "active_pauses",
+          "type_ref": "PauseEntryList",
+          "required": true,
+          "default": "",
+          "description": "All per-rule and per-session pause entries currently active.",
+          "validators": []
+        },
+        {
+          "name": "vault_present",
+          "type_ref": "Bool",
+          "required": true,
+          "default": "",
+          "description": "Whether a vault is present (C019: status works without vault).",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Complete snapshot of enforcement overrides for the status command.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "ClearedOverride",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "kind",
+          "type_ref": "ClearedOverrideKind",
+          "required": true,
+          "default": "",
+          "description": "What kind of override was cleared.",
+          "validators": []
+        },
+        {
+          "name": "session_id",
+          "type_ref": "OptionalSessionId",
+          "required": false,
+          "default": "",
+          "description": "Session ID if this was a session-level disable.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "A single override that was cleared by the enable command.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "ClearedOverrideKind",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "GlobalDisable",
+        "SessionDisable"
+      ],
+      "inner_types": [],
+      "description": "Discriminant for what type of override was cleared by enable.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "ClearedOverrideList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "ClearedOverride",
+      "variants": [],
+      "inner_types": [],
+      "description": "Collection of overrides cleared by a single enable invocation.",
+      "owner_component": ""
+    },
+    {
+      "name": "EnableResult",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "cleared",
+          "type_ref": "ClearedOverrideList",
+          "required": true,
+          "default": "",
+          "description": "Overrides that were cleared.",
+          "validators": []
+        },
+        {
+          "name": "was_disabled",
+          "type_ref": "Bool",
+          "required": true,
+          "default": "",
+          "description": "True if anything was actually disabled before enable ran.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Result of the enable command: what was cleared, or nothing.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "CliExitCode",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "Success",
+        "ValidationFailure",
+        "UsageError",
+        "InternalError"
+      ],
+      "inner_types": [],
+      "description": "Well-known CLI exit codes for all commands.",
+      "owner_component": "cli_observability_and_fix"
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "task_summary": "Define the interface contract for the root 'Main' component of signet-eval, specifically incorporating session-scoped preflight rules via SIGNET_SESSION. The contract must extend the existing Preflight system with session_id scoping, covering struct changes, DB schema migration, query filtering, deactivation scoping, and MCP tool updates — all while maintaining backward compatibility and passing 138 existing tests.",
+  "findings": [
+    {
+      "topic": "Session-scoped filtering pattern in SQLite",
+      "finding": "The canonical pattern for optional-scope filtering is: WHERE (session_id = ?1 OR session_id IS NULL) when a session is active, and no session_id filter when no session is active. This mirrors RBAC 'inherit-from-global' semantics. The key subtlety: NULL in SQL does not equal NULL, so IS NULL must be explicit. Using COALESCE or IFNULL to normalize is an anti-pattern here because it conflates 'global' with a specific value.",
+      "source": "SQLite documentation on NULL handling; established multi-tenant DB patterns",
+      "relevance": "Directly governs how active_preflight, is_preflight_locked, and deactivation queries must be structured. Getting NULL semantics wrong is the #1 cause of cross-session leakage bugs.",
+      "confidence": 0.97
+    },
+    {
+      "topic": "ALTER TABLE migration safety in SQLite",
+      "finding": "SQLite supports ALTER TABLE ADD COLUMN but not IF NOT EXISTS on the column itself. The standard pattern is to query PRAGMA table_info(preflights) and check whether session_id already exists before issuing ALTER TABLE. Alternatively, attempt the ALTER and catch the 'duplicate column name' error. The PRAGMA approach is more deterministic. CREATE INDEX IF NOT EXISTS is natively supported and safe to call idempotently.",
+      "source": "SQLite ALTER TABLE documentation; rusqlite migration patterns",
+      "relevance": "Requirement 5 (DB schema migration) must handle re-runs gracefully. The 'ALTER TABLE IF NOT EXISTS' pseudo-pattern mentioned in requirements doesn't exist in SQLite — must use PRAGMA introspection or error-catch.",
+      "confidence": 0.98
+    },
+    {
+      "topic": "Serde skip_serializing_if for Option fields",
+      "finding": "The idiomatic Rust/serde pattern is #[serde(default, skip_serializing_if = \"Option::is_none\")]. The 'default' attribute is critical for deserialization of existing records that lack the field — without it, deserialization of old YAML/JSON payloads will fail with a missing-field error. This is the backward-compatibility mechanism.",
+      "source": "serde.rs documentation; Rust API guidelines",
+      "relevance": "Requirement 1 mandates serde compatibility. Existing serialized preflights in the vault DB lack session_id. The default attribute ensures they deserialize to None.",
+      "confidence": 0.99
+    },
+    {
+      "topic": "HMAC coverage of optional fields",
+      "finding": "When an HMAC covers a serialized payload and a new optional field is added, the HMAC of existing records was computed WITHOUT that field. If deserialization now includes session_id: None in the canonical form but the original serialization omitted it, HMAC verification will fail unless: (a) skip_serializing_if ensures None fields are still omitted in re-serialization, preserving byte-identical output, or (b) HMAC is recomputed. Option (a) is strongly preferred for backward compatibility.",
+      "source": "Cryptographic signing best practices; serde canonical serialization patterns",
+      "relevance": "Requirement explicitly states 'Preflight HMAC must still cover the session_id.' For old preflights, the serialized form must remain identical (no session_id key emitted when None). For new preflights, session_id is included in the serialized payload before HMAC. This is a critical correctness constraint.",
+      "confidence": 0.96
+    },
+    {
+      "topic": "Environment variable reading — timing and determinism",
+      "finding": "std::env::var should be read at the call site (not cached globally) because SIGNET_SESSION could theoretically change between operations in a long-lived MCP server process. However, the specification says it's set at shell launch and stable for the process lifetime. Reading at call-site is still safer and matches the 'deterministic, side-effect-free policy evaluation' constraint since env reading is idempotent.",
+      "source": "Rust std::env documentation; 12-factor app configuration patterns",
+      "relevance": "Requirements 2 and 3 specify reading SIGNET_SESSION at submit-time and query-time respectively. Reading at each call site (not caching) is the correct approach for an MCP server that may be long-lived.",
+      "confidence": 0.93
+    },
+    {
+      "topic": "Deactivation scoping edge cases",
+      "finding": "When deactivating previous preflights on submit, four cases arise: (1) new preflight has session_id=S, old has session_id=S → deactivate; (2) new has session_id=S, old has session_id=NULL → deactivate (global superseded by session); (3) new has session_id=NULL, old has session_id=NULL → deactivate; (4) new has session_id=NULL, old has session_id=S → DO NOT deactivate (global filing shouldn't kill session-specific preflights). Wait — requirement 4 says 'A global preflight should not be deactivated when a session-scoped one is filed' which addresses case 2 differently: global should NOT be deactivated by session-scoped filing. Re-reading: deactivate only preflights with SAME session_id OR NULL. This means case 2 IS deactivated. But the non-requirement statement says global should not be deactivated. Contradiction needs resolution.",
+      "source": "Requirements analysis; multi-scope override patterns",
+      "relevance": "Requirement 4 has a subtle ambiguity. The rule text says 'deactivate previous step should only deactivate preflights with the SAME session_id (or NULL)' — but then 'A global preflight should not be deactivated when a session-scoped one is filed.' These conflict if taken literally. The second sentence should govern: when session_id=S is filed, only deactivate where session_id=S. When session_id=NULL is filed, only deactivate where session_id IS NULL.",
+      "confidence": 0.91
+    },
+    {
+      "topic": "Type registry integration — Preflight not yet in registry",
+      "finding": "The canonical type registry does not include Preflight, PreflightList, or PreflightStatus types. These must be defined as new component-specific types. The session_id field should use OptionalSessionId (already registered) or OptionalString. Since SessionId is already a registered primitive, the Preflight.session_id field type should be OptionalSessionId for type consistency.",
+      "source": "Provided canonical type registry",
+      "relevance": "The interface contract must define Preflight and related types using registry-consistent naming and field types. Using OptionalSessionId rather than Option<String> aligns with established registry patterns.",
+      "confidence": 0.95
+    },
+    {
+      "topic": "Index design for session_id queries",
+      "finding": "A partial index CREATE INDEX IF NOT EXISTS idx_preflight_session ON preflights(session_id) WHERE session_id IS NOT NULL would be more efficient for the common query pattern (filtering by specific session), since NULL session_ids are matched via IS NULL which uses a table scan on that subset anyway. However, SQLite partial indexes require careful query planner alignment. A standard full index is safer and still performant for the expected data volume (preflights are low-cardinality).",
+      "source": "SQLite index documentation; query optimization patterns",
+      "relevance": "Requirement 5 specifies a standard index. Given low data volume, a full index is appropriate and avoids partial-index complexity.",
+      "confidence": 0.9
+    },
+    {
+      "topic": "Rust 2021 edition — no unsafe, error handling patterns",
+      "finding": "The operating procedures mandate no unsafe code and no unwrap() on user-input paths. For env var reading, std::env::var returns Result<String, VarError>. The correct pattern is .ok().filter(|s| !s.is_empty()) to convert to Option<String>, handling both VarError::NotPresent and empty-string cases uniformly. This aligns with requirement 2 ('If env var is unset or empty, store None').",
+      "source": "Rust std::env documentation; project operating procedures",
+      "relevance": "Direct implementation pattern for SIGNET_SESSION capture. The .ok().filter(|s| !s.is_empty()) idiom is both safe and concise.",
+      "confidence": 0.99
+    },
+    {
+      "topic": "Hook mode exit code invariant",
+      "finding": "Operating procedures state 'Exit code always 0 in hook mode.' Hook evaluation (hook.rs) reads preflights. When session scoping is added, a preflight lookup failure due to migration issues must not cause a non-zero exit. Error paths in hook.rs preflight queries must default to 'no active preflight' rather than propagating errors.",
+      "source": "Project operating procedures; defensive programming patterns",
+      "relevance": "Adding session filtering to hook.rs preflight queries introduces a new failure mode (malformed session_id column before migration). Must handle gracefully.",
+      "confidence": 0.94
+    }
+  ],
+  "recommended_approach": "Define the interface contract with the following key decisions:\n\n**1. Type Definitions (new, component-specific):**\n- `Preflight` struct: add `session_id: OptionalSessionId` field with serde attributes `#[serde(default, skip_serializing_if = \"Option::is_none\")]`\n- `PreflightSessionFilter` enum: `Scoped(SessionId)` | `Unscoped` — computed from SIGNET_SESSION at each call site, passed into vault query functions\n\n**2. Session capture function:**\n- `fn current_session_id() -> OptionalSessionId` — reads `SIGNET_SESSION` env var, returns `None` if unset or empty. Single implementation, called at each use site (not cached).\n\n**3. Query contract (vault.rs):**\n- `active_preflight(filter: PreflightSessionFilter) -> Option<Preflight>` — when Scoped(sid): WHERE (session_id = ?1 OR session_id IS NULL) AND active = 1; when Unscoped: WHERE active = 1 (current behavior)\n- `store_preflight(preflight: Preflight)` — deactivation step: WHERE session_id = ?1 (exact match) when preflight has session_id; WHERE session_id IS NULL when preflight has no session_id. Globals are never deactivated by session-scoped filings, and vice versa.\n\n**4. Deactivation semantics (resolving ambiguity):**\n- Authoritative rule: deactivate only exact session_id matches. Session-scoped filing deactivates only same-session preflights. Global filing deactivates only global preflights. This matches the clarifying sentence in requirement 4.\n\n**5. Migration (vault.rs init or first-access):**\n- Check PRAGMA table_info(preflights) for session_id column existence\n- If absent: ALTER TABLE preflights ADD COLUMN session_id TEXT\n- Always: CREATE INDEX IF NOT EXISTS idx_preflight_session ON preflights(session_id)\n- Wrapped in a transaction; errors in hook mode are caught and logged, not propagated.\n\n**6. HMAC invariant:**\n- session_id is part of the serialized Preflight payload (covered by HMAC when present)\n- skip_serializing_if ensures old preflights with None serialize identically to their original form — HMAC remains valid\n\n**7. MCP tool response updates:**\n- `signet_preflight_active` response includes session_id field (shown as null or string)\n- `signet_preflight_submit` response echoes captured session_id",
+  "alternatives_considered": [
+    "Cache SIGNET_SESSION once at process startup rather than reading at each call site. Rejected: MCP server may be long-lived and the read is cheap; per-call-site reading is safer and matches the spec's 'read at query time' language.",
+    "Use a separate session_preflights table instead of adding a column. Rejected: violates 'prefer editing existing files' and 'keep changes minimal'; ALTER TABLE ADD COLUMN is simpler and sufficient.",
+    "Normalize NULL session_id to a sentinel string (e.g., '__global__') to simplify SQL queries. Rejected: changes HMAC-covered serialization of existing preflights, breaking backward compatibility. NULL semantics are well-understood and correct here.",
+    "Use OptionalString instead of OptionalSessionId for the Preflight.session_id field. Rejected: SessionId is an established registry primitive with semantic meaning; OptionalSessionId preserves type safety.",
+    "Partial index on session_id WHERE NOT NULL. Rejected: marginal performance gain for low-cardinality data; full index is simpler and spec-compliant."
+  ],
+  "risks": [
+    "HMAC breakage: If serde serialization of Preflight changes byte representation for existing records (e.g., emitting session_id: null instead of omitting the field), HMAC verification of historical preflights will fail. Mitigation: skip_serializing_if = Option::is_none ensures omission when None.",
+    "Deactivation scope ambiguity: Requirement 4 text is self-contradictory. If interpreted as 'deactivate same session_id OR NULL', filing a session-scoped preflight would deactivate globals. The clarifying sentence says globals should NOT be deactivated by session-scoped filings. Interface contract must codify the clarifying sentence as authoritative: deactivate only exact session_id matches.",
+    "Migration race condition: If two concurrent processes both attempt ALTER TABLE ADD COLUMN session_id, one will fail. Mitigation: use PRAGMA table_info introspection before ALTER, or catch the duplicate-column error gracefully.",
+    "Hook exit code violation: A failed migration or malformed query in hook.rs could cause a panic or non-zero exit. All new query paths in hook mode must have fallback behavior.",
+    "Test breakage from struct field addition: Any test that constructs Preflight literals will fail to compile without session_id. Since session_id: None is the default and #[serde(default)] handles deserialization, the fix is mechanical but must be applied to all 138 test sites if they construct Preflights directly."
+  ],
+  "compliance_notes": [
+    "No unsafe code — all changes use safe Rust (std::env::var, rusqlite parameterized queries).",
+    "No unwrap() on user-input paths — SIGNET_SESSION read uses .ok().filter() pattern.",
+    "Exit code 0 in hook mode — session-scoped preflight queries in hook.rs must not propagate errors; fallback to 'no active preflight' on failure.",
+    "Policy evaluation remains deterministic and side-effect-free — env var reading is idempotent; session filtering is a pure predicate over data.",
+    "No new dependencies — uses only std::env, existing rusqlite, existing serde derives.",
+    "All 138 existing tests must pass — Preflight struct changes require #[serde(default)] on session_id and session_id: None in any test constructors.",
+    "Backward compatibility: when SIGNET_SESSION is unset, all query and deactivation behavior is identical to current implementation."
+  ]
+}

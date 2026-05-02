@@ -1,0 +1,16 @@
+{
+  "root_id": "root",
+  "nodes": {
+    "root": {
+      "component_id": "root",
+      "name": "Main",
+      "description": "# Session-scope preflight rules via SIGNET_SESSION\n\n## Context\n\nsignet-eval's preflight system (self-imposed constraints before starting work) stores preflights in a shared SQLite database. When multiple Claude Code instances run concurrently in different projects, preflights from one session leak into others. A preflight filed for \"refactor auth in TalentSync\" blocks unrelated tool calls in \"update docs for signet-eval.\"\n\nThe `SIGNET_SESSION` envvar is already configured in `~/.profile` — it defaults to `$PWD` when launching Claude Code via the `cl` function.\n\n## Requirements\n\n### 1. Add session_id to Preflight struct\n- Add `session_id: Option<String>` field to `Preflight` (vault.rs)\n- Default to `None` for backward compatibility with existing preflights\n- Serialize/deserialize with serde (skip_serializing_if = is_none for clean YAML)\n\n### 2. Capture SIGNET_SESSION on preflight submit\n- In `handle_preflight_submit` (mcp_server.rs), read `std::env::var(\"SIGNET_SESSION\")`\n- Store the value in the preflight's `session_id` field\n- If env var is unset or empty, store `None` (global scope — backward compatible)\n\n### 3. Filter active_preflight by session\n- In `active_preflight` (vault.rs), read current `SIGNET_SESSION` at query time\n- If SIGNET_SESSION is set: only return preflights where `session_id` matches OR `session_id` is NULL (global preflights still apply everywhere)\n- If SIGNET_SESSION is unset: return any active preflight (current behavior)\n\n### 4. Scope deactivation to session\n- In `store_preflight` (vault.rs), the \"deactivate previous\" step should only deactivate preflights with the SAME session_id (or NULL)\n- A global preflight should not be deactivated when a session-scoped one is filed\n\n### 5. DB schema migration\n- Add `session_id TEXT` column to `preflights` table\n- Handle migration gracefully (ALTER TABLE IF NOT EXISTS pattern)\n- Add index: `CREATE INDEX IF NOT EXISTS idx_preflight_session ON preflights(session_id)`\n\n### 6. Update all preflight handlers\n- `is_preflight_locked` — scope to session\n- `preflight_history` — optionally filter by session\n- `handle_preflight_active` — scope to session\n- Hook evaluation (hook.rs) — scope to session\n\n### 7. MCP tool updates\n- `signet_preflight_active` should show the session_id\n- `signet_preflight_submit` should show the captured session_id in response\n\n## Non-requirements\n- No changes to hard policy rules (policy.rs condition functions, rule evaluation)\n- No changes to vault passphrase, credentials, or spending systems\n- No changes to CLI subcommands (main.rs) beyond what's needed for preflight display\n\n## Constraints\n- All 138 existing tests must continue to pass\n- When SIGNET_SESSION is unset, behavior is identical to current (backward compatible)\n- Preflight HMAC must still cover the session_id (it's in the serialized payload)\n- No new dependencies\n",
+      "depth": 0,
+      "parent_id": "",
+      "children": [],
+      "contract": null,
+      "implementation_status": "pending",
+      "test_results": null
+    }
+  }
+}

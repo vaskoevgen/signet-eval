@@ -1,0 +1,919 @@
+{
+  "component_id": "root",
+  "name": "Main",
+  "description": "Session-scoped preflight rules via SIGNET_SESSION. Adds session_id to the Preflight struct and threads session-awareness through all preflight operations (submit, query, deactivation, history, hook evaluation) so that concurrent Claude Code instances in different projects do not interfere with each other's preflights. When SIGNET_SESSION is unset, all behavior is backward-compatible with the current global-scope model. DB schema migration adds a nullable session_id TEXT column and index, wrapped in a transaction with hook-safe error handling.",
+  "version": 1,
+  "types": [
+    {
+      "name": "SessionId",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Opaque string identifier for an evaluation session.",
+      "owner_component": ""
+    },
+    {
+      "name": "OptionalSessionId",
+      "kind": "optional",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [
+        "SessionId"
+      ],
+      "description": "An optionally-present SessionId.",
+      "owner_component": ""
+    },
+    {
+      "name": "PreflightSessionFilter",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "Scoped",
+        "Unscoped"
+      ],
+      "inner_types": [
+        "SessionId"
+      ],
+      "description": "Determines how preflight queries are scoped. Computed from SIGNET_SESSION at each call site via current_session_filter(). Scoped(sid): match preflights with session_id = sid OR session_id IS NULL. Unscoped: match any active preflight (backward-compatible behavior when SIGNET_SESSION is unset).",
+      "owner_component": ""
+    },
+    {
+      "name": "PreflightDeactivationScope",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "ExactSession",
+        "GlobalOnly"
+      ],
+      "inner_types": [
+        "SessionId"
+      ],
+      "description": "Controls which preflights are deactivated when a new one is filed. ExactSession(sid): deactivate only WHERE session_id = sid. GlobalOnly: deactivate only WHERE session_id IS NULL. Derived from the incoming preflight's session_id field.",
+      "owner_component": ""
+    },
+    {
+      "name": "Preflight",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "id",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Unique preflight identifier (UUID v4).",
+          "validators": [
+            {
+              "kind": "regex",
+              "expression": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "error_message": "Preflight id must be a valid UUID v4"
+            }
+          ]
+        },
+        {
+          "name": "task_description",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Human-readable description of the task this preflight constrains.",
+          "validators": [
+            {
+              "kind": "length",
+              "expression": "min=1",
+              "error_message": "task_description must not be empty"
+            }
+          ]
+        },
+        {
+          "name": "constraints",
+          "type_ref": "list",
+          "required": true,
+          "default": "",
+          "description": "List of self-imposed constraint strings.",
+          "validators": []
+        },
+        {
+          "name": "filed_at",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "ISO 8601 UTC timestamp of when the preflight was filed.",
+          "validators": []
+        },
+        {
+          "name": "active",
+          "type_ref": "bool",
+          "required": true,
+          "default": "true",
+          "description": "Whether this preflight is currently active. Only one preflight per (session_id) scope may be active at a time.",
+          "validators": []
+        },
+        {
+          "name": "session_id",
+          "type_ref": "OptionalSessionId",
+          "required": false,
+          "default": "None",
+          "description": "Session scope for this preflight. None means global scope (applies to all sessions). When set, this preflight only applies to the matching session. Serialized with #[serde(default, skip_serializing_if = \"Option::is_none\")] to preserve HMAC compatibility with pre-migration preflights.",
+          "validators": []
+        },
+        {
+          "name": "hmac",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "HMAC-SHA256 covering the serialized preflight payload (including session_id when present). Ensures tamper detection.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "A self-imposed constraint record filed before starting work. Stored in SQLite preflights table. HMAC covers the full serialized payload including session_id when present.",
+      "owner_component": "root"
+    },
+    {
+      "name": "PreflightList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "Preflight",
+      "variants": [],
+      "inner_types": [],
+      "description": "A list of Preflight records, used for history queries.",
+      "owner_component": ""
+    },
+    {
+      "name": "PreflightHistoryFilter",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "session_filter",
+          "type_ref": "PreflightSessionFilter",
+          "required": true,
+          "default": "",
+          "description": "Session scope filter. When Scoped, returns preflights matching that session_id plus global preflights. When Unscoped, returns all preflights.",
+          "validators": []
+        },
+        {
+          "name": "limit",
+          "type_ref": "int",
+          "required": false,
+          "default": "50",
+          "description": "Maximum number of preflights to return, ordered by filed_at DESC.",
+          "validators": [
+            {
+              "kind": "range",
+              "expression": "min=1,max=1000",
+              "error_message": "limit must be between 1 and 1000"
+            }
+          ]
+        },
+        {
+          "name": "active_only",
+          "type_ref": "bool",
+          "required": false,
+          "default": "false",
+          "description": "If true, return only active preflights.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Optional filtering parameters for preflight history queries.",
+      "owner_component": ""
+    },
+    {
+      "name": "McpToolResponse",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "success",
+          "type_ref": "bool",
+          "required": true,
+          "default": "",
+          "description": "Whether the operation succeeded.",
+          "validators": []
+        },
+        {
+          "name": "message",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Human-readable status message.",
+          "validators": []
+        },
+        {
+          "name": "preflight",
+          "type_ref": "Preflight",
+          "required": false,
+          "default": "",
+          "description": "The preflight record, if applicable.",
+          "validators": []
+        },
+        {
+          "name": "session_id",
+          "type_ref": "OptionalSessionId",
+          "required": false,
+          "default": "None",
+          "description": "The session_id that was captured or matched. Echoed in responses so callers can verify session scope.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Standard MCP tool response structure for preflight operations.",
+      "owner_component": ""
+    },
+    {
+      "name": "MigrationResult",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "AlreadyMigrated",
+        "MigrationApplied",
+        "MigrationFailed"
+      ],
+      "inner_types": [],
+      "description": "Outcome of the database schema migration for session_id support.",
+      "owner_component": ""
+    },
+    {
+      "name": "PreflightError",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "DatabaseError",
+        "SerializationError",
+        "HmacVerificationFailed",
+        "MigrationFailed",
+        "InvalidSessionId"
+      ],
+      "inner_types": [],
+      "description": "Error types produced by preflight operations.",
+      "owner_component": ""
+    }
+  ],
+  "functions": [
+    {
+      "name": "current_session_id",
+      "description": "Reads the SIGNET_SESSION environment variable and returns an OptionalSessionId. Returns None if the env var is unset or empty. Single canonical implementation; called at each use site, never cached. Equivalent to: std::env::var(\"SIGNET_SESSION\").ok().filter(|s| !s.is_empty()).",
+      "inputs": [],
+      "output_type": "OptionalSessionId",
+      "error_cases": [],
+      "preconditions": [],
+      "postconditions": [
+        "Returns None if SIGNET_SESSION is unset",
+        "Returns None if SIGNET_SESSION is set to empty string",
+        "Returns Some(sid) where sid is non-empty if SIGNET_SESSION is set to a non-empty value",
+        "Result is not cached — each call re-reads the environment"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "reads_file",
+          "target": "environment variable SIGNET_SESSION",
+          "description": "Reads process environment; no filesystem or network I/O"
+        }
+      ],
+      "performance_budget": null
+    },
+    {
+      "name": "current_session_filter",
+      "description": "Derives a PreflightSessionFilter from the current SIGNET_SESSION env var. Returns Scoped(sid) when SIGNET_SESSION is set and non-empty, Unscoped otherwise. Convenience wrapper around current_session_id().",
+      "inputs": [],
+      "output_type": "PreflightSessionFilter",
+      "error_cases": [],
+      "preconditions": [],
+      "postconditions": [
+        "Returns Scoped(sid) iff current_session_id() returns Some(sid)",
+        "Returns Unscoped iff current_session_id() returns None"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "reads_file",
+          "target": "environment variable SIGNET_SESSION (via current_session_id)",
+          "description": "Reads process environment"
+        }
+      ],
+      "performance_budget": null
+    },
+    {
+      "name": "migrate_preflight_schema",
+      "description": "Ensures the preflights table has the session_id TEXT column and the idx_preflight_session index. Checks PRAGMA table_info(preflights) for column existence. If absent, executes ALTER TABLE preflights ADD COLUMN session_id TEXT within a transaction. Always executes CREATE INDEX IF NOT EXISTS idx_preflight_session ON preflights(session_id). In hook mode, errors are caught and logged (never propagated) to maintain exit code 0 invariant.",
+      "inputs": [
+        {
+          "name": "db_connection",
+          "type_ref": "any",
+          "required": true,
+          "default": "",
+          "description": "Open rusqlite::Connection to the preflight SQLite database.",
+          "validators": []
+        },
+        {
+          "name": "hook_mode",
+          "type_ref": "bool",
+          "required": true,
+          "default": "",
+          "description": "When true, migration errors are logged and swallowed rather than propagated.",
+          "validators": []
+        }
+      ],
+      "output_type": "MigrationResult",
+      "error_cases": [
+        {
+          "name": "migration_sql_error",
+          "condition": "ALTER TABLE or CREATE INDEX SQL statement fails",
+          "error_type": "PreflightError::MigrationFailed",
+          "error_data": {
+            "detail": "SQLite error message from failed DDL statement"
+          }
+        },
+        {
+          "name": "pragma_read_error",
+          "condition": "PRAGMA table_info(preflights) query fails",
+          "error_type": "PreflightError::DatabaseError",
+          "error_data": {
+            "detail": "Cannot inspect preflights table schema"
+          }
+        }
+      ],
+      "preconditions": [
+        "db_connection is a valid, open SQLite connection",
+        "preflights table already exists (base schema created by vault init)"
+      ],
+      "postconditions": [
+        "On MigrationApplied: session_id TEXT column exists on preflights table",
+        "On MigrationApplied: idx_preflight_session index exists on preflights(session_id)",
+        "On AlreadyMigrated: no schema changes made",
+        "On MigrationFailed with hook_mode=true: error is logged, function returns MigrationFailed without panicking",
+        "Existing rows have session_id = NULL after migration",
+        "No data in existing rows is modified"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "mutates_state",
+          "target": "SQLite preflights table schema",
+          "description": "Adds session_id TEXT column and index if not already present"
+        },
+        {
+          "kind": "logging",
+          "target": "stderr",
+          "description": "Logs migration status and any errors encountered in hook mode"
+        }
+      ],
+      "performance_budget": {
+        "p95_latency_ms": 100,
+        "max_memory_mb": null,
+        "complexity": "O(1)"
+      }
+    },
+    {
+      "name": "store_preflight",
+      "description": "Persists a new Preflight to the SQLite database. Before inserting, deactivates previous preflights with exact session_id match: if the incoming preflight has session_id = Some(sid), deactivates only WHERE session_id = sid AND active = 1; if session_id = None, deactivates only WHERE session_id IS NULL AND active = 1. This ensures session-scoped filings never deactivate global preflights and vice versa. The deactivation and insert are wrapped in a single transaction.",
+      "inputs": [
+        {
+          "name": "db_connection",
+          "type_ref": "any",
+          "required": true,
+          "default": "",
+          "description": "Open rusqlite::Connection to the preflight SQLite database.",
+          "validators": []
+        },
+        {
+          "name": "preflight",
+          "type_ref": "Preflight",
+          "required": true,
+          "default": "",
+          "description": "The preflight record to store. Must have HMAC already computed (covering session_id).",
+          "validators": []
+        }
+      ],
+      "output_type": "bool",
+      "error_cases": [
+        {
+          "name": "database_write_error",
+          "condition": "SQLite INSERT or UPDATE fails (disk full, locked, etc.)",
+          "error_type": "PreflightError::DatabaseError",
+          "error_data": {
+            "detail": "SQLite error message"
+          }
+        },
+        {
+          "name": "transaction_commit_error",
+          "condition": "Transaction commit fails",
+          "error_type": "PreflightError::DatabaseError",
+          "error_data": {
+            "detail": "Transaction commit failed"
+          }
+        }
+      ],
+      "preconditions": [
+        "preflight.hmac is a valid HMAC-SHA256 over the serialized payload including session_id",
+        "preflight.active is true",
+        "preflight.session_id is either None or a non-empty string",
+        "migrate_preflight_schema has been called on this connection"
+      ],
+      "postconditions": [
+        "The new preflight is persisted with active = 1",
+        "All previously active preflights with the SAME session_id are now active = 0",
+        "Preflights with a DIFFERENT session_id are unmodified",
+        "Global preflights (session_id IS NULL) are unmodified when incoming preflight has session_id = Some(_)",
+        "Session-scoped preflights are unmodified when incoming preflight has session_id = None",
+        "The entire operation (deactivate + insert) is atomic (single transaction)"
+      ],
+      "idempotent": false,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "mutates_state",
+          "target": "SQLite preflights table",
+          "description": "Deactivates same-scope preflights and inserts new active preflight"
+        }
+      ],
+      "performance_budget": {
+        "p95_latency_ms": 50,
+        "max_memory_mb": null,
+        "complexity": "O(1)"
+      }
+    },
+    {
+      "name": "active_preflight",
+      "description": "Queries the SQLite database for the currently active preflight, scoped by session. When filter is Scoped(sid): SELECT ... WHERE active = 1 AND (session_id = ?1 OR session_id IS NULL) ORDER BY filed_at DESC LIMIT 1. When filter is Unscoped: SELECT ... WHERE active = 1 ORDER BY filed_at DESC LIMIT 1. Returns the most recently filed matching active preflight, or None if no active preflight exists in scope.",
+      "inputs": [
+        {
+          "name": "db_connection",
+          "type_ref": "any",
+          "required": true,
+          "default": "",
+          "description": "Open rusqlite::Connection to the preflight SQLite database.",
+          "validators": []
+        },
+        {
+          "name": "filter",
+          "type_ref": "PreflightSessionFilter",
+          "required": true,
+          "default": "",
+          "description": "Session scope filter. Scoped(sid) matches session-specific and global preflights; Unscoped matches any active preflight.",
+          "validators": []
+        }
+      ],
+      "output_type": "Preflight",
+      "error_cases": [
+        {
+          "name": "database_read_error",
+          "condition": "SQLite SELECT query fails",
+          "error_type": "PreflightError::DatabaseError",
+          "error_data": {
+            "detail": "SQLite error message"
+          }
+        },
+        {
+          "name": "deserialization_error",
+          "condition": "Stored preflight row cannot be deserialized into Preflight struct",
+          "error_type": "PreflightError::SerializationError",
+          "error_data": {
+            "detail": "Failed to deserialize preflight from database row"
+          }
+        }
+      ],
+      "preconditions": [
+        "migrate_preflight_schema has been called on this connection"
+      ],
+      "postconditions": [
+        "If Some(p) returned: p.active == true",
+        "If Some(p) returned and filter is Scoped(sid): p.session_id == Some(sid) OR p.session_id == None",
+        "If None returned: no active preflight exists matching the filter criteria",
+        "When filter is Unscoped: behavior is identical to pre-session-scoping implementation",
+        "HMAC of returned preflight is not verified by this function (caller responsibility)"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "reads_file",
+          "target": "SQLite preflights table",
+          "description": "Reads active preflight rows filtered by session scope"
+        }
+      ],
+      "performance_budget": {
+        "p95_latency_ms": 20,
+        "max_memory_mb": null,
+        "complexity": "O(1)"
+      }
+    },
+    {
+      "name": "is_preflight_locked",
+      "description": "Returns whether there is an active preflight in the current session scope. Delegates to active_preflight(current_session_filter()). Returns true if an active preflight exists, false otherwise. Used by hook evaluation to determine if preflight constraints apply.",
+      "inputs": [
+        {
+          "name": "db_connection",
+          "type_ref": "any",
+          "required": true,
+          "default": "",
+          "description": "Open rusqlite::Connection to the preflight SQLite database.",
+          "validators": []
+        }
+      ],
+      "output_type": "bool",
+      "error_cases": [
+        {
+          "name": "database_read_error",
+          "condition": "Underlying active_preflight query fails",
+          "error_type": "PreflightError::DatabaseError",
+          "error_data": {
+            "detail": "SQLite error message"
+          }
+        }
+      ],
+      "preconditions": [
+        "migrate_preflight_schema has been called on this connection"
+      ],
+      "postconditions": [
+        "Returns true iff active_preflight(db_connection, current_session_filter()) returns Some(_)",
+        "Returns false iff active_preflight(db_connection, current_session_filter()) returns None"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "reads_file",
+          "target": "SQLite preflights table and SIGNET_SESSION env var",
+          "description": "Reads environment variable and queries database"
+        }
+      ],
+      "performance_budget": {
+        "p95_latency_ms": 25,
+        "max_memory_mb": null,
+        "complexity": "O(1)"
+      }
+    },
+    {
+      "name": "preflight_history",
+      "description": "Returns a list of preflights ordered by filed_at DESC, optionally filtered by session scope and active status. When filter.session_filter is Scoped(sid): returns preflights where session_id = sid OR session_id IS NULL. When Unscoped: returns all preflights.",
+      "inputs": [
+        {
+          "name": "db_connection",
+          "type_ref": "any",
+          "required": true,
+          "default": "",
+          "description": "Open rusqlite::Connection to the preflight SQLite database.",
+          "validators": []
+        },
+        {
+          "name": "filter",
+          "type_ref": "PreflightHistoryFilter",
+          "required": true,
+          "default": "",
+          "description": "Filtering and pagination parameters for the history query.",
+          "validators": []
+        }
+      ],
+      "output_type": "PreflightList",
+      "error_cases": [
+        {
+          "name": "database_read_error",
+          "condition": "SQLite SELECT query fails",
+          "error_type": "PreflightError::DatabaseError",
+          "error_data": {
+            "detail": "SQLite error message"
+          }
+        }
+      ],
+      "preconditions": [
+        "migrate_preflight_schema has been called on this connection",
+        "filter.limit >= 1 and filter.limit <= 1000"
+      ],
+      "postconditions": [
+        "Returned list length <= filter.limit",
+        "Returned list is ordered by filed_at DESC",
+        "If filter.active_only is true: all returned preflights have active == true",
+        "If filter.session_filter is Scoped(sid): all returned preflights have session_id == Some(sid) OR session_id == None"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "reads_file",
+          "target": "SQLite preflights table",
+          "description": "Reads preflight history rows with optional session and active filters"
+        }
+      ],
+      "performance_budget": {
+        "p95_latency_ms": 50,
+        "max_memory_mb": null,
+        "complexity": "O(n) where n = filter.limit"
+      }
+    },
+    {
+      "name": "handle_preflight_submit",
+      "description": "MCP tool handler for signet_preflight_submit. Reads SIGNET_SESSION via current_session_id(), sets it on the Preflight struct, computes HMAC over the full serialized payload (including session_id), then delegates to store_preflight(). Returns an McpToolResponse echoing the captured session_id.",
+      "inputs": [
+        {
+          "name": "db_connection",
+          "type_ref": "any",
+          "required": true,
+          "default": "",
+          "description": "Open rusqlite::Connection to the preflight SQLite database.",
+          "validators": []
+        },
+        {
+          "name": "task_description",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Human-readable task description for the preflight.",
+          "validators": [
+            {
+              "kind": "length",
+              "expression": "min=1",
+              "error_message": "task_description must not be empty"
+            }
+          ]
+        },
+        {
+          "name": "constraints",
+          "type_ref": "list",
+          "required": true,
+          "default": "",
+          "description": "List of self-imposed constraint strings.",
+          "validators": [
+            {
+              "kind": "length",
+              "expression": "min=1",
+              "error_message": "At least one constraint must be provided"
+            }
+          ]
+        }
+      ],
+      "output_type": "McpToolResponse",
+      "error_cases": [
+        {
+          "name": "empty_task_description",
+          "condition": "task_description is empty",
+          "error_type": "PreflightError::SerializationError",
+          "error_data": {
+            "detail": "task_description must not be empty"
+          }
+        },
+        {
+          "name": "empty_constraints",
+          "condition": "constraints list is empty",
+          "error_type": "PreflightError::SerializationError",
+          "error_data": {
+            "detail": "At least one constraint must be provided"
+          }
+        },
+        {
+          "name": "database_error",
+          "condition": "store_preflight fails",
+          "error_type": "PreflightError::DatabaseError",
+          "error_data": {
+            "detail": "Failed to store preflight"
+          }
+        }
+      ],
+      "preconditions": [
+        "task_description is non-empty",
+        "constraints list is non-empty",
+        "migrate_preflight_schema has been called on this connection"
+      ],
+      "postconditions": [
+        "On success: response.success == true",
+        "On success: response.preflight is the stored Preflight with HMAC computed",
+        "On success: response.session_id matches current_session_id() at time of call",
+        "On success: response.preflight.session_id == response.session_id",
+        "Previous active preflights with the same session_id are deactivated",
+        "Previous active preflights with a different session_id are unmodified"
+      ],
+      "idempotent": false,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "reads_file",
+          "target": "environment variable SIGNET_SESSION",
+          "description": "Reads session scope from environment"
+        },
+        {
+          "kind": "mutates_state",
+          "target": "SQLite preflights table",
+          "description": "Deactivates same-scope preflights and inserts new active preflight"
+        }
+      ],
+      "performance_budget": null
+    },
+    {
+      "name": "handle_preflight_active",
+      "description": "MCP tool handler for signet_preflight_active. Reads current session via current_session_filter(), delegates to active_preflight(), returns McpToolResponse with the active preflight (if any) including its session_id field.",
+      "inputs": [
+        {
+          "name": "db_connection",
+          "type_ref": "any",
+          "required": true,
+          "default": "",
+          "description": "Open rusqlite::Connection to the preflight SQLite database.",
+          "validators": []
+        }
+      ],
+      "output_type": "McpToolResponse",
+      "error_cases": [
+        {
+          "name": "database_error",
+          "condition": "active_preflight query fails",
+          "error_type": "PreflightError::DatabaseError",
+          "error_data": {
+            "detail": "Failed to query active preflight"
+          }
+        }
+      ],
+      "preconditions": [
+        "migrate_preflight_schema has been called on this connection"
+      ],
+      "postconditions": [
+        "response.success == true (even if no active preflight exists)",
+        "If active preflight exists in scope: response.preflight is set and response.session_id reflects its session_id",
+        "If no active preflight in scope: response.message indicates none active, response.preflight is not set"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "reads_file",
+          "target": "environment variable SIGNET_SESSION and SQLite preflights table",
+          "description": "Reads session scope from environment, queries active preflight from database"
+        }
+      ],
+      "performance_budget": {
+        "p95_latency_ms": 25,
+        "max_memory_mb": null,
+        "complexity": "O(1)"
+      }
+    },
+    {
+      "name": "evaluate_preflight_in_hook",
+      "description": "Hook-mode preflight evaluation. Reads current session scope, queries active_preflight, and evaluates whether the pending tool call is consistent with the active preflight's constraints. In hook mode, ALL errors are caught and logged — the function NEVER propagates errors and NEVER causes a non-zero exit code. If no active preflight matches the session scope, evaluation is a no-op pass.",
+      "inputs": [
+        {
+          "name": "db_connection",
+          "type_ref": "any",
+          "required": true,
+          "default": "",
+          "description": "Open rusqlite::Connection to the preflight SQLite database.",
+          "validators": []
+        },
+        {
+          "name": "tool_name",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Name of the tool being invoked in the hook.",
+          "validators": []
+        },
+        {
+          "name": "tool_input",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Serialized JSON input to the tool being invoked.",
+          "validators": []
+        }
+      ],
+      "output_type": "McpToolResponse",
+      "error_cases": [],
+      "preconditions": [],
+      "postconditions": [
+        "Function NEVER panics",
+        "Function NEVER returns an error that would cause non-zero exit code",
+        "If SIGNET_SESSION is set: only preflights matching that session (or global) are considered",
+        "If SIGNET_SESSION is unset: any active preflight is considered (backward compatible)",
+        "If no active preflight in scope: response.success == true with pass-through message",
+        "If database errors occur: they are logged to stderr and the tool call is allowed (fail-open in hook mode)"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "reads_file",
+          "target": "environment variable SIGNET_SESSION",
+          "description": "Reads session scope from environment"
+        },
+        {
+          "kind": "reads_file",
+          "target": "SQLite preflights table",
+          "description": "Queries active preflight for the current session scope"
+        },
+        {
+          "kind": "logging",
+          "target": "stderr",
+          "description": "Logs any errors encountered during evaluation (errors are swallowed, not propagated)"
+        }
+      ],
+      "performance_budget": {
+        "p95_latency_ms": 30,
+        "max_memory_mb": null,
+        "complexity": "O(1)"
+      }
+    }
+  ],
+  "dependencies": [],
+  "dependency_contracts": {},
+  "invariants": [
+    "When SIGNET_SESSION is unset or empty, all preflight behavior is identical to pre-session-scoping implementation (backward compatible)",
+    "session_id stored in the database is always either NULL or a non-empty string — empty strings are normalized to NULL",
+    "Only one preflight per unique session_id value may be active at any time (enforced by store_preflight deactivation)",
+    "Global preflights (session_id IS NULL) are visible in all session scopes (Scoped queries match session_id = sid OR session_id IS NULL)",
+    "Session-scoped deactivation uses exact match semantics: filing with session_id = X deactivates only active preflights with session_id = X; filing with session_id = NULL deactivates only active preflights with session_id IS NULL",
+    "HMAC covers the full serialized Preflight payload including session_id when present",
+    "skip_serializing_if = Option::is_none on session_id ensures pre-migration preflights with session_id = None serialize identically to their original form, preserving HMAC validity",
+    "In hook mode, exit code is always 0 regardless of database errors, migration failures, or query failures",
+    "migrate_preflight_schema is idempotent and safe to call on every connection open",
+    "No unsafe code is used anywhere in the implementation",
+    "All 138 existing tests continue to pass without modification",
+    "Policy evaluation (policy.rs) is not modified — it remains deterministic and side-effect-free",
+    "No new crate dependencies are introduced"
+  ],
+  "requires": [],
+  "processing_register": "rigorous-analytical",
+  "data_access": {
+    "reads": [
+      "INTERNAL"
+    ],
+    "writes": [
+      "INTERNAL"
+    ],
+    "rationale": "Reads and writes preflight constraint records (task descriptions, self-imposed constraints, session identifiers, HMAC signatures) in a local SQLite database. Reads the SIGNET_SESSION environment variable (derived from $PWD) to determine session scope. All data is internal operational state — no PII, no credentials, no external user data. The preflight data includes task descriptions authored by the AI agent and constraint strings, both classified as INTERNAL operational metadata.",
+    "side_effects": [
+      {
+        "type": "env_var_read",
+        "classification": "INTERNAL",
+        "fields": [
+          "SIGNET_SESSION"
+        ],
+        "rationale": "Reads SIGNET_SESSION environment variable to determine session scope for preflight filtering and capture. Value is typically a filesystem path ($PWD) set at Claude Code launch."
+      },
+      {
+        "type": "sqlite_read",
+        "classification": "INTERNAL",
+        "fields": [
+          "preflights.id",
+          "preflights.task_description",
+          "preflights.constraints",
+          "preflights.filed_at",
+          "preflights.active",
+          "preflights.session_id",
+          "preflights.hmac"
+        ],
+        "rationale": "Queries preflight records from SQLite to check active constraints, retrieve history, and evaluate hook compliance. Filtered by session_id for scope isolation."
+      },
+      {
+        "type": "sqlite_write",
+        "classification": "INTERNAL",
+        "fields": [
+          "preflights.id",
+          "preflights.task_description",
+          "preflights.constraints",
+          "preflights.filed_at",
+          "preflights.active",
+          "preflights.session_id",
+          "preflights.hmac"
+        ],
+        "rationale": "Inserts new preflight records and deactivates prior same-scope preflights. Schema migration adds session_id column and index."
+      },
+      {
+        "type": "sqlite_ddl",
+        "classification": "INTERNAL",
+        "fields": [
+          "preflights.session_id"
+        ],
+        "rationale": "ALTER TABLE to add session_id TEXT column and CREATE INDEX for efficient session-scoped queries. Migration is idempotent."
+      }
+    ]
+  },
+  "authority": {
+    "domains": [
+      "preflight_session_scope"
+    ],
+    "rationale": "This component is the sole authority for session-scoped preflight management. It owns the semantics of how SIGNET_SESSION maps to preflight visibility, the deactivation rules (exact session_id match), the schema migration for session_id support, and the invariant that global preflights (NULL session_id) are visible across all sessions. No other component defines or interprets preflight session scoping."
+  }
+}

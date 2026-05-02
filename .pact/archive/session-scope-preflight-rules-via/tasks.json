@@ -1,0 +1,134 @@
+{
+  "project_id": "signet-eval",
+  "tasks": [
+    {
+      "id": "T001",
+      "phase": "setup",
+      "component_id": "",
+      "description": "Initialize project directory structure",
+      "file_path": "",
+      "status": "pending",
+      "parallel": false,
+      "depends_on": [],
+      "category": "scaffold"
+    },
+    {
+      "id": "T002",
+      "phase": "setup",
+      "component_id": "",
+      "description": "Verify environment and dependencies",
+      "file_path": "",
+      "status": "pending",
+      "parallel": false,
+      "depends_on": [
+        "T001"
+      ],
+      "category": "scaffold"
+    },
+    {
+      "id": "T003",
+      "phase": "component",
+      "component_id": "cli_observability_and_fix",
+      "description": "Review contract for CLI Observability and Auto-Fix for signet-eval",
+      "file_path": "contracts/cli_observability_and_fix/interface.json",
+      "status": "pending",
+      "parallel": true,
+      "depends_on": [],
+      "category": "contract_review"
+    },
+    {
+      "id": "T004",
+      "phase": "component",
+      "component_id": "cli_observability_and_fix",
+      "description": "Set up test harness for CLI Observability and Auto-Fix for signet-eval",
+      "file_path": "",
+      "status": "pending",
+      "parallel": false,
+      "depends_on": [
+        "T003"
+      ],
+      "category": "test_setup"
+    },
+    {
+      "id": "T005",
+      "phase": "component",
+      "component_id": "cli_observability_and_fix",
+      "description": "Write contract tests for CLI Observability and Auto-Fix for signet-eval",
+      "file_path": "",
+      "status": "pending",
+      "parallel": false,
+      "depends_on": [
+        "T004"
+      ],
+      "category": "test_write"
+    },
+    {
+      "id": "T006",
+      "phase": "component",
+      "component_id": "cli_observability_and_fix",
+      "description": "Implement CLI Observability and Auto-Fix for signet-eval",
+      "file_path": "implementations/cli_observability_and_fix/src/",
+      "status": "pending",
+      "parallel": false,
+      "depends_on": [
+        "T005"
+      ],
+      "category": "implement"
+    },
+    {
+      "id": "T007",
+      "phase": "component",
+      "component_id": "cli_observability_and_fix",
+      "description": "Run tests and verify CLI Observability and Auto-Fix for signet-eval",
+      "file_path": "",
+      "status": "pending",
+      "parallel": false,
+      "depends_on": [
+        "T006"
+      ],
+      "category": "verify"
+    },
+    {
+      "id": "T008",
+      "phase": "polish",
+      "component_id": "",
+      "description": "Run full contract validation gate",
+      "file_path": "",
+      "status": "pending",
+      "parallel": false,
+      "depends_on": [],
+      "category": "validate"
+    },
+    {
+      "id": "T009",
+      "phase": "polish",
+      "component_id": "",
+      "description": "Cross-artifact analysis",
+      "file_path": "",
+      "status": "pending",
+      "parallel": false,
+      "depends_on": [],
+      "category": "validate"
+    },
+    {
+      "id": "T010",
+      "phase": "polish",
+      "component_id": "",
+      "description": "Update design document",
+      "file_path": "",
+      "status": "pending",
+      "parallel": false,
+      "depends_on": [],
+      "category": "document"
+    }
+  ],
+  "checkpoints": [
+    {
+      "after_phase": "component",
+      "description": "All leaf components verified",
+      "validation": "All leaf contract tests pass"
+    }
+  ],
+  "generated_at": "2026-04-02T01:05:11.508768",
+  "version": 1
+}

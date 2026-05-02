@@ -1,0 +1,1292 @@
+{
+  "component_id": "cli_observability_and_fix",
+  "name": "CLI Observability and Auto-Fix for signet-eval",
+  "description": "Single-module implementation scoped to src/main.rs (plus integration tests in tests/integration_cli.rs). Three cohesive extensions to existing CLI command dispatch: (1) validate --fix / --dry-run for mechanical policy auto-correction with atomic write and optional vault re-signing; (2) enable command that clears global disable state AND all per-session disables; (3) status command that queries and renders all enforcement override/pause state as plain-text sections. All features share CLI arg parsing infrastructure, error handling patterns, and the Policy/Vault/pause-disable data model. No unsafe code; deterministic policy evaluation; exit code always 0 in hook mode.",
+  "version": 1,
+  "types": [
+    {
+      "name": "PolicyPath",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "value",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Absolute or relative path to the policy file.",
+          "validators": [
+            {
+              "kind": "length",
+              "expression": "min=1",
+              "error_message": "Policy path must not be empty."
+            },
+            {
+              "kind": "regex",
+              "expression": "\\.(toml|yaml)$",
+              "error_message": "Policy path must end with .toml or .yaml."
+            }
+          ]
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Validated filesystem path to a policy file. Must be non-empty and end with .toml or .yaml.",
+      "owner_component": ""
+    },
+    {
+      "name": "SessionId",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Opaque string identifier for an evaluation session.",
+      "owner_component": ""
+    },
+    {
+      "name": "RuleId",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "value",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Rule identifier string.",
+          "validators": [
+            {
+              "kind": "length",
+              "expression": "min=1,max=128",
+              "error_message": "RuleId must be 1–128 characters."
+            },
+            {
+              "kind": "regex",
+              "expression": "^[a-zA-Z0-9_-]+$",
+              "error_message": "RuleId must be alphanumeric, underscores, or hyphens."
+            }
+          ]
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Identifier for a policy rule. Non-empty, alphanumeric with underscores/hyphens.",
+      "owner_component": ""
+    },
+    {
+      "name": "FieldPath",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "value",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Dot-delimited field path, e.g. 'rules.max_tokens.limit'.",
+          "validators": [
+            {
+              "kind": "length",
+              "expression": "min=1,max=512",
+              "error_message": "FieldPath must be 1–512 characters."
+            },
+            {
+              "kind": "regex",
+              "expression": "^[a-zA-Z0-9_.\\[\\]]+$",
+              "error_message": "FieldPath must contain only alphanumeric, dots, underscores, and bracket notation."
+            }
+          ]
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Dot-delimited path to a field within a policy rule configuration.",
+      "owner_component": ""
+    },
+    {
+      "name": "Timestamp",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "value",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "RFC 3339 formatted UTC timestamp.",
+          "validators": [
+            {
+              "kind": "regex",
+              "expression": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+              "error_message": "Timestamp must be RFC 3339 UTC (ending in Z)."
+            }
+          ]
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "RFC 3339 UTC timestamp string.",
+      "owner_component": ""
+    },
+    {
+      "name": "ValidateMode",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "DiagnoseOnly",
+        "Fix",
+        "DryRun"
+      ],
+      "inner_types": [],
+      "description": "Operational mode for the validate command.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "CliExitCode",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "Success",
+        "ValidationFailure",
+        "UsageError",
+        "InternalError"
+      ],
+      "inner_types": [],
+      "description": "Well-known CLI exit codes for all commands.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "Policy",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "path",
+          "type_ref": "PathBuf",
+          "required": true,
+          "default": "",
+          "description": "Filesystem location from which the policy was loaded.",
+          "validators": []
+        },
+        {
+          "name": "rules",
+          "type_ref": "PolicyRuleList",
+          "required": true,
+          "default": "",
+          "description": "Ordered list of enforcement rules in this policy.",
+          "validators": []
+        },
+        {
+          "name": "raw_bytes",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Original serialized policy content for diffing.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Deserialized policy document governing evaluation constraints and rules.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "DiagnosticSeverity",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "Error",
+        "Warning",
+        "Info"
+      ],
+      "inner_types": [],
+      "description": "Severity level of a validation diagnostic.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "Diagnostic",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "severity",
+          "type_ref": "DiagnosticSeverity",
+          "required": true,
+          "default": "",
+          "description": "Severity level of this diagnostic.",
+          "validators": []
+        },
+        {
+          "name": "rule_id",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Constraint ID this diagnostic pertains to (e.g. 'C016').",
+          "validators": []
+        },
+        {
+          "name": "message",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Human-readable diagnostic message.",
+          "validators": []
+        },
+        {
+          "name": "fixable",
+          "type_ref": "Bool",
+          "required": true,
+          "default": "",
+          "description": "True if this diagnostic is mechanically fixable (not structural).",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "A single validation diagnostic emitted by validate, with optional fix hint.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "DiagnosticList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "Diagnostic",
+      "variants": [],
+      "inner_types": [],
+      "description": "Ordered collection of Diagnostic entries from a validation pass.",
+      "owner_component": ""
+    },
+    {
+      "name": "FixChange",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "rule_id",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Constraint ID that triggered this fix.",
+          "validators": []
+        },
+        {
+          "name": "field_path",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Dot-delimited path to the field that was changed.",
+          "validators": []
+        },
+        {
+          "name": "old_value",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Serialized previous value.",
+          "validators": []
+        },
+        {
+          "name": "new_value",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Serialized replacement value.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "A single mechanical change applied by fix_policy().",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "FixChangeList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "FixChange",
+      "variants": [],
+      "inner_types": [],
+      "description": "Ordered collection of FixChange entries.",
+      "owner_component": ""
+    },
+    {
+      "name": "FixResult",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "original",
+          "type_ref": "Policy",
+          "required": true,
+          "default": "",
+          "description": "The policy before fixes were applied.",
+          "validators": []
+        },
+        {
+          "name": "fixed",
+          "type_ref": "Policy",
+          "required": true,
+          "default": "",
+          "description": "The policy after mechanical clamping fixes.",
+          "validators": []
+        },
+        {
+          "name": "changes",
+          "type_ref": "FixChangeList",
+          "required": true,
+          "default": "",
+          "description": "List of individual changes applied.",
+          "validators": []
+        },
+        {
+          "name": "has_changes",
+          "type_ref": "Bool",
+          "required": true,
+          "default": "",
+          "description": "True if fixed differs from original (convenience flag).",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Result of calling fix_policy(): the corrected policy and a summary of changes.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "ClearedOverrideKind",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "GlobalDisable",
+        "SessionDisable"
+      ],
+      "inner_types": [],
+      "description": "Discriminant for what type of override was cleared by enable.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "ClearedOverride",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "kind",
+          "type_ref": "ClearedOverrideKind",
+          "required": true,
+          "default": "",
+          "description": "What kind of override was cleared.",
+          "validators": []
+        },
+        {
+          "name": "session_id",
+          "type_ref": "OptionalSessionId",
+          "required": false,
+          "default": "",
+          "description": "Session ID if this was a session-level disable.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "A single override that was cleared by the enable command.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "ClearedOverrideList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "ClearedOverride",
+      "variants": [],
+      "inner_types": [],
+      "description": "Collection of overrides cleared by a single enable invocation.",
+      "owner_component": ""
+    },
+    {
+      "name": "EnableResult",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "cleared",
+          "type_ref": "ClearedOverrideList",
+          "required": true,
+          "default": "",
+          "description": "Overrides that were cleared.",
+          "validators": []
+        },
+        {
+          "name": "was_disabled",
+          "type_ref": "Bool",
+          "required": true,
+          "default": "",
+          "description": "True if anything was actually disabled before enable ran.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Result of the enable command: what was cleared, or nothing.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "SessionIdList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "SessionId",
+      "variants": [],
+      "inner_types": [],
+      "description": "List of session identifiers.",
+      "owner_component": ""
+    },
+    {
+      "name": "PauseScope",
+      "kind": "enum",
+      "fields": [],
+      "item_type": "",
+      "variants": [
+        "Global",
+        "Rule",
+        "Session",
+        "RuleSession"
+      ],
+      "inner_types": [],
+      "description": "Scope discriminant for a PauseEntry.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "PauseEntry",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "scope",
+          "type_ref": "PauseScope",
+          "required": true,
+          "default": "",
+          "description": "What this pause applies to.",
+          "validators": []
+        },
+        {
+          "name": "rule_id",
+          "type_ref": "OptionalString",
+          "required": false,
+          "default": "",
+          "description": "If scope is Rule or RuleSession, the rule ID.",
+          "validators": []
+        },
+        {
+          "name": "session_id",
+          "type_ref": "OptionalSessionId",
+          "required": false,
+          "default": "",
+          "description": "If scope is Session or RuleSession, the session ID.",
+          "validators": []
+        },
+        {
+          "name": "expires_at",
+          "type_ref": "OptionalInstant",
+          "required": false,
+          "default": "",
+          "description": "When this pause expires; None means indefinite.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "A single active pause record (global, per-rule, or per-session).",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "PauseEntryList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "PauseEntry",
+      "variants": [],
+      "inner_types": [],
+      "description": "Ordered collection of active PauseEntry records.",
+      "owner_component": ""
+    },
+    {
+      "name": "EnforcementState",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "globally_disabled",
+          "type_ref": "Bool",
+          "required": true,
+          "default": "",
+          "description": "True if enforcement is globally disabled.",
+          "validators": []
+        },
+        {
+          "name": "disabled_sessions",
+          "type_ref": "SessionIdList",
+          "required": true,
+          "default": "",
+          "description": "Sessions with enforcement individually disabled.",
+          "validators": []
+        },
+        {
+          "name": "global_pause",
+          "type_ref": "OptionalInstant",
+          "required": false,
+          "default": "",
+          "description": "If globally paused, the expiry instant; None if not paused.",
+          "validators": []
+        },
+        {
+          "name": "active_pauses",
+          "type_ref": "PauseEntryList",
+          "required": true,
+          "default": "",
+          "description": "All per-rule and per-session pause entries currently active.",
+          "validators": []
+        },
+        {
+          "name": "vault_present",
+          "type_ref": "Bool",
+          "required": true,
+          "default": "",
+          "description": "Whether a vault is present (C019: status works without vault).",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Complete snapshot of enforcement overrides for the status command.",
+      "owner_component": "cli_observability_and_fix"
+    },
+    {
+      "name": "DiffLine",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "rule_id",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Rule affected.",
+          "validators": []
+        },
+        {
+          "name": "field_path",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Dot-delimited field path.",
+          "validators": []
+        },
+        {
+          "name": "old_value",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Original value as string.",
+          "validators": []
+        },
+        {
+          "name": "new_value",
+          "type_ref": "str",
+          "required": true,
+          "default": "",
+          "description": "Corrected value as string.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "A single line in the human-readable diff output for --dry-run.",
+      "owner_component": ""
+    },
+    {
+      "name": "String",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "UTF-8 string primitive.",
+      "owner_component": ""
+    },
+    {
+      "name": "Bool",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Boolean primitive.",
+      "owner_component": ""
+    },
+    {
+      "name": "PathBuf",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Filesystem path (std::path::PathBuf).",
+      "owner_component": ""
+    },
+    {
+      "name": "PolicyRuleList",
+      "kind": "list",
+      "fields": [],
+      "item_type": "PolicyRule",
+      "variants": [],
+      "inner_types": [],
+      "description": "Ordered collection of PolicyRule entries.",
+      "owner_component": ""
+    },
+    {
+      "name": "OptionalString",
+      "kind": "optional",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [
+        "String"
+      ],
+      "description": "An optionally-present String value.",
+      "owner_component": ""
+    },
+    {
+      "name": "OptionalSessionId",
+      "kind": "optional",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [
+        "SessionId"
+      ],
+      "description": "An optionally-present SessionId.",
+      "owner_component": ""
+    },
+    {
+      "name": "OptionalInstant",
+      "kind": "optional",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [
+        "Instant"
+      ],
+      "description": "An optionally-present Instant (timestamp).",
+      "owner_component": ""
+    },
+    {
+      "name": "Instant",
+      "kind": "primitive",
+      "fields": [],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "Wall-clock timestamp (e.g. chrono::DateTime<Utc> or std::time::SystemTime).",
+      "owner_component": ""
+    },
+    {
+      "name": "PolicyRule",
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "id",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Unique rule identifier (e.g. 'C014').",
+          "validators": []
+        },
+        {
+          "name": "description",
+          "type_ref": "String",
+          "required": true,
+          "default": "",
+          "description": "Human-readable description of the rule.",
+          "validators": []
+        }
+      ],
+      "item_type": "",
+      "variants": [],
+      "inner_types": [],
+      "description": "A single named enforcement rule within a Policy.",
+      "owner_component": "cli_observability_and_fix"
+    }
+  ],
+  "functions": [
+    {
+      "name": "derive_validate_mode",
+      "description": "Derives the ValidateMode from the parsed CLI flags --fix and --dry-run. Enforces the constraint that --dry-run without --fix is a hard error (exit 1). Pure function with no side effects.",
+      "inputs": [
+        {
+          "name": "fix",
+          "type_ref": "bool",
+          "required": true,
+          "default": "",
+          "description": "Whether --fix flag was provided.",
+          "validators": []
+        },
+        {
+          "name": "dry_run",
+          "type_ref": "bool",
+          "required": true,
+          "default": "",
+          "description": "Whether --dry-run flag was provided.",
+          "validators": []
+        }
+      ],
+      "output_type": "ValidateMode",
+      "error_cases": [
+        {
+          "name": "dry_run_without_fix",
+          "condition": "dry_run is true but fix is false",
+          "error_type": "CliExitCode::InvalidArguments",
+          "error_data": {
+            "message": "--dry-run requires --fix"
+          }
+        }
+      ],
+      "preconditions": [
+        "fix and dry_run are booleans parsed from CLI args"
+      ],
+      "postconditions": [
+        "If !fix && !dry_run → DiagnoseOnly",
+        "If fix && dry_run → DryRun",
+        "If fix && !dry_run → Fix",
+        "If !fix && dry_run → error (InvalidArguments)"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "none",
+          "target": "",
+          "description": ""
+        }
+      ],
+      "performance_budget": null
+    },
+    {
+      "name": "fix_policy",
+      "description": "Pure function: applies mechanical clamping fixes to a policy (C016). Returns a FixResult containing the corrected policy, the list of changes, and whether any changes were made. Only mechanical clamping is applied; structural errors are not modified. Deterministic and side-effect-free.",
+      "inputs": [
+        {
+          "name": "policy",
+          "type_ref": "Policy",
+          "required": true,
+          "default": "",
+          "description": "The original policy to fix.",
+          "validators": []
+        }
+      ],
+      "output_type": "FixResult",
+      "error_cases": [],
+      "preconditions": [
+        "policy is a valid deserialized policy object (may contain clamping violations but not parse errors)"
+      ],
+      "postconditions": [
+        "has_changes == !changes.is_empty()",
+        "If has_changes is false, fixed_policy is semantically identical to input policy",
+        "Each FixChange in changes has distinct (rule_id, field_path) pair",
+        "All changes represent mechanical clamping only — no structural modifications",
+        "Function is deterministic: same input always produces same output"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "none",
+          "target": "",
+          "description": ""
+        }
+      ],
+      "performance_budget": {
+        "p95_latency_ms": 50,
+        "max_memory_mb": null,
+        "complexity": "O(n) where n = number of rules in policy"
+      }
+    },
+    {
+      "name": "handle_validate",
+      "description": "Handler for the validate command match arm. Runs existing validation to produce diagnostics, then branches on ValidateMode: DiagnoseOnly emits diagnostics and exits; DryRun computes fix and renders structured diff without writing; Fix computes fix, writes via atomic tempfile, re-signs if vault present (rollback on signing failure), and emits remaining unfixable diagnostics. Idempotent (C014).",
+      "inputs": [
+        {
+          "name": "policy_path",
+          "type_ref": "PolicyPath",
+          "required": true,
+          "default": "",
+          "description": "Path to the policy file to validate/fix.",
+          "validators": []
+        },
+        {
+          "name": "mode",
+          "type_ref": "ValidateMode",
+          "required": true,
+          "default": "",
+          "description": "Derived validate mode (DiagnoseOnly, DryRun, or Fix).",
+          "validators": []
+        }
+      ],
+      "output_type": "CliExitCode",
+      "error_cases": [
+        {
+          "name": "policy_file_not_found",
+          "condition": "policy_path does not exist on the filesystem",
+          "error_type": "CliExitCode::InvalidArguments",
+          "error_data": {
+            "message": "Policy file not found"
+          }
+        },
+        {
+          "name": "policy_parse_error",
+          "condition": "Policy file cannot be deserialized",
+          "error_type": "CliExitCode::ValidationFailure",
+          "error_data": {
+            "message": "Failed to parse policy file"
+          }
+        },
+        {
+          "name": "tempfile_write_failure",
+          "condition": "Cannot create or write to tempfile during Fix mode",
+          "error_type": "CliExitCode::InternalError",
+          "error_data": {
+            "message": "Failed to write temporary policy file"
+          }
+        },
+        {
+          "name": "signing_failure",
+          "condition": "Vault re-signing fails after writing fixed policy",
+          "error_type": "CliExitCode::InternalError",
+          "error_data": {
+            "message": "Failed to re-sign policy; changes rolled back"
+          }
+        },
+        {
+          "name": "persist_failure",
+          "condition": "Atomic rename of tempfile over original fails",
+          "error_type": "CliExitCode::InternalError",
+          "error_data": {
+            "message": "Failed to persist fixed policy file"
+          }
+        }
+      ],
+      "preconditions": [
+        "policy_path points to an existing, readable file",
+        "mode has been validated by derive_validate_mode (no InvalidArguments state)"
+      ],
+      "postconditions": [
+        "DiagnoseOnly: diagnostics emitted to stdout, no filesystem writes",
+        "DryRun: structured diff emitted to stdout, no filesystem writes, exit Success",
+        "Fix with no changes: 'No fixable issues' emitted, exit Success, no writes",
+        "Fix with changes and vault present: policy written atomically, re-signed, exit Success",
+        "Fix with changes and vault absent: policy written atomically, re-signing skipped, exit Success",
+        "Fix with changes and signing failure: tempfile deleted, exit InternalError, original policy unchanged",
+        "Diagnostics with fixable=false are always passed through unchanged"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [
+        "Reads policy file from disk",
+        "Writes corrected policy via atomic tempfile in Fix mode",
+        "Calls vault re-sign in Fix mode when vault is present",
+        "Prints diagnostics and/or diff to stdout"
+      ],
+      "structured_side_effects": [
+        {
+          "kind": "reads_file",
+          "target": "policy_path",
+          "description": "Reads the policy file for validation and fix input."
+        },
+        {
+          "kind": "writes_file",
+          "target": "policy_path (via tempfile atomic rename)",
+          "description": "Writes corrected policy in Fix mode. Atomic: tempfile created, then renamed over original."
+        },
+        {
+          "kind": "network_call",
+          "target": "vault re-sign",
+          "description": "Re-signs the fixed policy via vault when vault is present. Not a network call per se but an external process/library invocation."
+        },
+        {
+          "kind": "logging",
+          "target": "stdout",
+          "description": "Emits diagnostics, diff, or status messages to stdout."
+        }
+      ],
+      "performance_budget": null
+    },
+    {
+      "name": "handle_enable",
+      "description": "Handler for the enable command match arm (when invoked without --session). Clears global disable state, then iterates list_disabled_sessions() to clear each session disable. Accumulates cleared items into EnableResult. If nothing was disabled, prints 'Not currently disabled.' and exits 0. Otherwise prints each cleared item and exits 0. Best-effort: errors clearing individual sessions are accumulated but do not halt processing.",
+      "inputs": [],
+      "output_type": "CliExitCode",
+      "error_cases": [
+        {
+          "name": "state_dir_inaccessible",
+          "condition": "Cannot read the disable state directory",
+          "error_type": "CliExitCode::InternalError",
+          "error_data": {
+            "message": "Failed to access enforcement state directory"
+          }
+        },
+        {
+          "name": "session_clear_failure",
+          "condition": "One or more per-session disable files could not be removed",
+          "error_type": "CliExitCode::InternalError",
+          "error_data": {
+            "message": "Failed to clear one or more session disables"
+          }
+        }
+      ],
+      "preconditions": [
+        "Command was invoked without --session flag"
+      ],
+      "postconditions": [
+        "Global disable state file is removed if it existed",
+        "All per-session disable state files are removed if they existed",
+        "If no overrides were active, 'Not currently disabled.' is printed to stdout",
+        "If overrides were cleared, each cleared override is printed to stdout",
+        "Exit code is always Success (0)"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [
+        "Deletes global disable state file",
+        "Deletes per-session disable state files",
+        "Prints cleared override list to stdout"
+      ],
+      "structured_side_effects": [
+        {
+          "kind": "writes_file",
+          "target": "global_disable_state_file",
+          "description": "Removes the global disable state file if present."
+        },
+        {
+          "kind": "writes_file",
+          "target": "session_disable_state_files",
+          "description": "Removes each per-session disable state file."
+        },
+        {
+          "kind": "logging",
+          "target": "stdout",
+          "description": "Prints cleared overrides or 'Not currently disabled.' message."
+        }
+      ],
+      "performance_budget": null
+    },
+    {
+      "name": "handle_status",
+      "description": "Handler for the status command match arm. Queries all enforcement override and pause state: global disable, per-session disables, global pause (is_paused_file, pause_until_file), and all active pauses (list_pauses). Constructs EnforcementState and renders sorted, section-based plain text to stdout. Sections with no active overrides are omitted. Must work without a vault present (C019).",
+      "inputs": [],
+      "output_type": "CliExitCode",
+      "error_cases": [
+        {
+          "name": "state_query_failure",
+          "condition": "Cannot read one or more state files or directories",
+          "error_type": "CliExitCode::InternalError",
+          "error_data": {
+            "message": "Failed to query enforcement state"
+          }
+        }
+      ],
+      "preconditions": [],
+      "postconditions": [
+        "EnforcementState is fully populated from filesystem queries",
+        "Sections with no active overrides are not printed",
+        "Output uses existing CLI output header style (plain text, section headers)",
+        "Pauses within each section are sorted by scope then expiry",
+        "vault_present reflects actual vault state; absence does not cause error",
+        "Exit code is always Success (0)"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [
+        "Reads global disable state",
+        "Reads per-session disable state files",
+        "Reads pause state files",
+        "Reads vault metadata for presence check",
+        "Prints enforcement state to stdout"
+      ],
+      "structured_side_effects": [
+        {
+          "kind": "reads_file",
+          "target": "global_disable_state_file",
+          "description": "Reads global disable state."
+        },
+        {
+          "kind": "reads_file",
+          "target": "session_disable_state_files",
+          "description": "Enumerates and reads per-session disable state files."
+        },
+        {
+          "kind": "reads_file",
+          "target": "pause_state_files",
+          "description": "Reads is_paused_file, pause_until_file, and list_pauses results."
+        },
+        {
+          "kind": "reads_file",
+          "target": "vault_path",
+          "description": "Checks vault directory/metadata for presence. Does not require vault to be initialized."
+        },
+        {
+          "kind": "logging",
+          "target": "stdout",
+          "description": "Renders enforcement state sections to stdout."
+        }
+      ],
+      "performance_budget": null
+    },
+    {
+      "name": "render_fix_diff",
+      "description": "Pure function: renders a FixChangeList into a human-readable structured diff for --dry-run output. Each line formatted as 'rule_id: field_path: old → new'. Output order matches change list order.",
+      "inputs": [
+        {
+          "name": "changes",
+          "type_ref": "FixChangeList",
+          "required": true,
+          "default": "",
+          "description": "List of changes to render.",
+          "validators": []
+        }
+      ],
+      "output_type": "str",
+      "error_cases": [],
+      "preconditions": [
+        "changes is a valid FixChangeList (possibly empty)"
+      ],
+      "postconditions": [
+        "Output is a newline-delimited string with one line per change",
+        "If changes is empty, output is the empty string",
+        "Each line matches format: '{rule_id}: {field_path}: {old_value} → {new_value}'"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "none",
+          "target": "",
+          "description": ""
+        }
+      ],
+      "performance_budget": {
+        "p95_latency_ms": null,
+        "max_memory_mb": null,
+        "complexity": "O(n) where n = number of changes"
+      }
+    },
+    {
+      "name": "render_enforcement_state",
+      "description": "Pure function: renders an EnforcementState into plain-text sectioned output matching existing CLI output patterns. Omits sections with no active overrides. Sections: 'Enforcement' (globally disabled), 'Disabled Sessions' (list), 'Global Pause' (until timestamp), 'Active Pauses' (list with scope/rule/session/expiry). Pauses sorted by scope then expiry.",
+      "inputs": [
+        {
+          "name": "state",
+          "type_ref": "EnforcementState",
+          "required": true,
+          "default": "",
+          "description": "Aggregated enforcement state to render.",
+          "validators": []
+        }
+      ],
+      "output_type": "str",
+      "error_cases": [],
+      "preconditions": [
+        "state is a valid EnforcementState"
+      ],
+      "postconditions": [
+        "Output is a newline-delimited string with section headers and content",
+        "Sections with no active overrides are omitted entirely",
+        "If all sections empty, output is 'No active overrides.'",
+        "Pauses within Active Pauses section sorted by scope (Global < Rule < Session) then expiry ascending",
+        "Section headers match existing CLI output style"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "none",
+          "target": "",
+          "description": ""
+        }
+      ],
+      "performance_budget": {
+        "p95_latency_ms": null,
+        "max_memory_mb": null,
+        "complexity": "O(n log n) where n = number of pause entries (due to sorting)"
+      }
+    },
+    {
+      "name": "build_enable_result",
+      "description": "Pure function: constructs an EnableResult from the global disable state and list of cleared session overrides. Determines was_disabled from whether any overrides were cleared.",
+      "inputs": [
+        {
+          "name": "global_was_disabled",
+          "type_ref": "bool",
+          "required": true,
+          "default": "",
+          "description": "Whether global disable was active before clearing.",
+          "validators": []
+        },
+        {
+          "name": "cleared_sessions",
+          "type_ref": "SessionIdList",
+          "required": true,
+          "default": "",
+          "description": "List of session IDs whose disables were cleared.",
+          "validators": []
+        }
+      ],
+      "output_type": "EnableResult",
+      "error_cases": [],
+      "preconditions": [],
+      "postconditions": [
+        "was_disabled == (global_was_disabled || !cleared_sessions.is_empty())",
+        "cleared list contains GlobalDisable entry iff global_was_disabled",
+        "cleared list contains one SessionDisable entry per session in cleared_sessions",
+        "Order: GlobalDisable first (if present), then SessionDisable entries in input order"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [],
+      "structured_side_effects": [
+        {
+          "kind": "none",
+          "target": "",
+          "description": ""
+        }
+      ],
+      "performance_budget": null
+    },
+    {
+      "name": "query_enforcement_state",
+      "description": "Queries all enforcement state from the filesystem: global disable, per-session disables, global pause, pause-until, all active pauses, and vault presence. Aggregates into EnforcementState. Vault absence is not an error (C019).",
+      "inputs": [],
+      "output_type": "EnforcementState",
+      "error_cases": [
+        {
+          "name": "state_dir_read_failure",
+          "condition": "Cannot read the state directory or its contents",
+          "error_type": "CliExitCode::InternalError",
+          "error_data": {
+            "message": "Failed to read enforcement state from filesystem"
+          }
+        }
+      ],
+      "preconditions": [],
+      "postconditions": [
+        "All fields of EnforcementState are populated from current filesystem state",
+        "vault_present is false if vault directory does not exist or is uninitialized",
+        "active_pauses includes only non-expired pauses at time of query",
+        "disabled_sessions contains exactly the sessions returned by list_disabled_sessions()"
+      ],
+      "idempotent": true,
+      "is_async": false,
+      "side_effects": [
+        "Reads enforcement state files from disk",
+        "Reads vault metadata from disk"
+      ],
+      "structured_side_effects": [
+        {
+          "kind": "reads_file",
+          "target": "global_disable_state_file",
+          "description": "Reads global disable state."
+        },
+        {
+          "kind": "reads_file",
+          "target": "session_disable_state_files",
+          "description": "Enumerates per-session disable state files."
+        },
+        {
+          "kind": "reads_file",
+          "target": "pause_state_files",
+          "description": "Reads is_paused_file, pause_until_file, and list_pauses."
+        },
+        {
+          "kind": "reads_file",
+          "target": "vault_path",
+          "description": "Checks vault presence."
+        }
+      ],
+      "performance_budget": null
+    }
+  ],
+  "dependencies": [],
+  "dependency_contracts": {},
+  "invariants": [
+    "C014: handle_validate in Fix mode is idempotent — running fix on an already-fixed policy produces no changes and no writes.",
+    "C016: fix_policy() applies only mechanical clamping fixes; structural errors are never modified and pass through as diagnostics with fixable=false.",
+    "C019: handle_status and query_enforcement_state must succeed without a vault present; vault_present=false is a normal state, not an error.",
+    "No unsafe code in any implementation.",
+    "All errors on user input paths are handled — no unwrap() on fallible operations derived from user input.",
+    "Exit code is always 0 in hook mode, enforced at outermost CLI dispatch level.",
+    "Policy evaluation (including fix_policy) is deterministic and side-effect-free.",
+    "Atomic write semantics: in Fix mode, policy is written to tempfile first, signature computed, then tempfile renamed over original. On signing failure, tempfile is deleted and original is untouched.",
+    "Signing order: vault re-sign is attempted BEFORE atomic rename of tempfile over original policy. Rename only occurs on signing success.",
+    "--dry-run without --fix always produces exit code 1 (InvalidArguments).",
+    "handle_enable is idempotent: clearing already-cleared state is a no-op that reports 'Not currently disabled.'",
+    "render_enforcement_state omits sections with no active overrides; if all sections empty, outputs 'No active overrides.'",
+    "All 128 existing tests continue to pass; new features have integration tests in tests/integration_cli.rs."
+  ],
+  "requires": [],
+  "processing_register": "rigorous-analytical",
+  "data_access": {
+    "reads": [
+      "INTERNAL:policy_files",
+      "INTERNAL:pause_state_files",
+      "INTERNAL:disable_state_files",
+      "INTERNAL:vault_metadata"
+    ],
+    "writes": [
+      "INTERNAL:policy_files",
+      "INTERNAL:disable_state_files"
+    ],
+    "rationale": "Reads policy files (INTERNAL) to validate and optionally fix rule configurations. Reads and writes pause/disable state files (INTERNAL) to query and clear enforcement overrides. Reads vault metadata (INTERNAL) to determine vault presence and perform re-signing of fixed policies. Writes policy files (INTERNAL) when --fix mode persists corrected policy. All data is local filesystem state with no PII; classification is INTERNAL throughout.",
+    "side_effects": [
+      {
+        "type": "filesystem_read",
+        "classification": "INTERNAL",
+        "fields": [
+          "policy_path",
+          "pause_file_path",
+          "pause_until_file_path",
+          "disable_state_path",
+          "session_disable_paths",
+          "vault_path"
+        ],
+        "rationale": "Reads policy file for validation/fix, pause and disable state files for status/enable queries, and vault directory for presence check and re-signing."
+      },
+      {
+        "type": "filesystem_write",
+        "classification": "INTERNAL",
+        "fields": [
+          "policy_path",
+          "tempfile_path",
+          "disable_state_path",
+          "session_disable_paths"
+        ],
+        "rationale": "Writes corrected policy via atomic tempfile persist in --fix mode. Deletes global and per-session disable state files in enable mode."
+      },
+      {
+        "type": "vault_sign",
+        "classification": "INTERNAL",
+        "fields": [
+          "policy_path"
+        ],
+        "rationale": "Re-signs the fixed policy file when vault is present, ensuring cryptographic integrity is maintained after auto-fix."
+      }
+    ]
+  },
+  "authority": {
+    "domains": [],
+    "rationale": null
+  }
+}

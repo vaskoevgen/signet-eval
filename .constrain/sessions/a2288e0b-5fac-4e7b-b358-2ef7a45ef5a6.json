@@ -1,0 +1,28 @@
+{
+  "id": "a2288e0b-5fac-4e7b-b358-2ef7a45ef5a6",
+  "schema_version": 1,
+  "posture": "adversarial",
+  "phase": "understand",
+  "round": 0,
+  "understand_rounds": 0,
+  "challenge_rounds": 0,
+  "conversation": [],
+  "problem_model": {
+    "system_description": "",
+    "stakeholders": [],
+    "failure_modes": [],
+    "dependencies": [],
+    "assumptions": [],
+    "boundaries": [],
+    "history": [],
+    "success_shape": [],
+    "acceptance_criteria": []
+  },
+  "prompt_md": "",
+  "constraints_yaml": "",
+  "trust_policy_yaml": "",
+  "component_map_yaml": "",
+  "schema_hints_yaml": "",
+  "created_at": "2026-03-26T06:12:56.094856+00:00",
+  "updated_at": "2026-03-26T06:12:56.095108+00:00"
+}

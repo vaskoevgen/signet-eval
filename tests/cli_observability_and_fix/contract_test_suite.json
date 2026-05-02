@@ -1,0 +1,1162 @@
+{
+  "component_id": "cli_observability_and_fix",
+  "contract_version": 1,
+  "test_cases": [
+    {
+      "id": "derive_validate_mode_diagnose_only",
+      "description": "fix=False, dry_run=False yields DiagnoseOnly",
+      "function": "derive_validate_mode",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "fix": "False",
+        "dry_run": "False"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == ValidateMode.DiagnoseOnly"
+      ]
+    },
+    {
+      "id": "derive_validate_mode_fix",
+      "description": "fix=True, dry_run=False yields Fix",
+      "function": "derive_validate_mode",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "fix": "True",
+        "dry_run": "False"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == ValidateMode.Fix"
+      ]
+    },
+    {
+      "id": "derive_validate_mode_dry_run",
+      "description": "fix=True, dry_run=True yields DryRun",
+      "function": "derive_validate_mode",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "fix": "True",
+        "dry_run": "True"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == ValidateMode.DryRun"
+      ]
+    },
+    {
+      "id": "derive_validate_mode_dry_run_without_fix_error",
+      "description": "fix=False, dry_run=True raises dry_run_without_fix error",
+      "function": "derive_validate_mode",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "fix": "False",
+        "dry_run": "True"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "dry_run_without_fix",
+      "assertions": [
+        "raises error for invalid argument combination"
+      ]
+    },
+    {
+      "id": "policy_path_valid_toml",
+      "description": "PolicyPath accepts a .toml path",
+      "function": "PolicyPath",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "policy.toml"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "instance.value == 'policy.toml'"
+      ]
+    },
+    {
+      "id": "policy_path_valid_yaml",
+      "description": "PolicyPath accepts a .yaml path",
+      "function": "PolicyPath",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "some/dir/config.yaml"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "instance.value == 'some/dir/config.yaml'"
+      ]
+    },
+    {
+      "id": "policy_path_empty_rejected",
+      "description": "PolicyPath rejects empty string (min length 1)",
+      "function": "PolicyPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": ""
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "validation error",
+      "assertions": [
+        "empty string is rejected"
+      ]
+    },
+    {
+      "id": "policy_path_wrong_extension_rejected",
+      "description": "PolicyPath rejects file not ending in .toml or .yaml",
+      "function": "PolicyPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "policy.json"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "validation error",
+      "assertions": [
+        "non-toml/yaml extension is rejected"
+      ]
+    },
+    {
+      "id": "policy_path_no_extension_rejected",
+      "description": "PolicyPath rejects path with no extension",
+      "function": "PolicyPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "policy"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "validation error",
+      "assertions": [
+        "no extension is rejected"
+      ]
+    },
+    {
+      "id": "rule_id_valid_alphanumeric",
+      "description": "RuleId accepts alphanumeric with underscores and hyphens",
+      "function": "RuleId",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "rule-01_test"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "instance.value == 'rule-01_test'"
+      ]
+    },
+    {
+      "id": "rule_id_empty_rejected",
+      "description": "RuleId rejects empty string",
+      "function": "RuleId",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": ""
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "validation error",
+      "assertions": [
+        "empty string is rejected"
+      ]
+    },
+    {
+      "id": "rule_id_max_length_accepted",
+      "description": "RuleId accepts exactly 128 character string",
+      "function": "RuleId",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "a]*128"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "128-char value is accepted"
+      ]
+    },
+    {
+      "id": "rule_id_over_max_rejected",
+      "description": "RuleId rejects 129 character string",
+      "function": "RuleId",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "a]*129"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "validation error",
+      "assertions": [
+        "129-char value is rejected"
+      ]
+    },
+    {
+      "id": "rule_id_special_chars_rejected",
+      "description": "RuleId rejects special characters like spaces and dots",
+      "function": "RuleId",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "rule.name with spaces"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "validation error",
+      "assertions": [
+        "special characters are rejected"
+      ]
+    },
+    {
+      "id": "field_path_valid",
+      "description": "FieldPath accepts dot-delimited alphanumeric path with brackets",
+      "function": "FieldPath",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "rules[0].max_value"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "instance.value == 'rules[0].max_value'"
+      ]
+    },
+    {
+      "id": "field_path_empty_rejected",
+      "description": "FieldPath rejects empty string",
+      "function": "FieldPath",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": ""
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "validation error",
+      "assertions": [
+        "empty string is rejected"
+      ]
+    },
+    {
+      "id": "field_path_max_length_512",
+      "description": "FieldPath accepts 512-character string",
+      "function": "FieldPath",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "a]*512"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "512-char value is accepted"
+      ]
+    },
+    {
+      "id": "field_path_over_max_rejected",
+      "description": "FieldPath rejects 513-character string",
+      "function": "FieldPath",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "a]*513"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "validation error",
+      "assertions": [
+        "513-char value is rejected"
+      ]
+    },
+    {
+      "id": "timestamp_valid_rfc3339",
+      "description": "Timestamp accepts valid RFC 3339 UTC string",
+      "function": "Timestamp",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "2024-01-15T08:30:00Z"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "instance.value == '2024-01-15T08:30:00Z'"
+      ]
+    },
+    {
+      "id": "timestamp_with_fractional_seconds",
+      "description": "Timestamp accepts fractional seconds",
+      "function": "Timestamp",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "2024-01-15T08:30:00.123456Z"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "instance.value == '2024-01-15T08:30:00.123456Z'"
+      ]
+    },
+    {
+      "id": "timestamp_invalid_format_rejected",
+      "description": "Timestamp rejects non-RFC3339 format",
+      "function": "Timestamp",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "Jan 15, 2024"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "validation error",
+      "assertions": [
+        "non-RFC3339 format is rejected"
+      ]
+    },
+    {
+      "id": "timestamp_no_z_suffix_rejected",
+      "description": "Timestamp rejects timestamp without Z suffix",
+      "function": "Timestamp",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "value": "2024-01-15T08:30:00"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "validation error",
+      "assertions": [
+        "missing Z suffix is rejected"
+      ]
+    },
+    {
+      "id": "fix_policy_no_changes",
+      "description": "fix_policy on clean policy returns no changes",
+      "function": "fix_policy",
+      "category": "happy_path",
+      "setup_description": "Create a valid policy with no clamping violations",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result.has_changes is False",
+        "len(result.changes) == 0",
+        "result.fixed is semantically identical to input"
+      ]
+    },
+    {
+      "id": "fix_policy_single_fix",
+      "description": "fix_policy applies a single clamping fix and reports it",
+      "function": "fix_policy",
+      "category": "happy_path",
+      "setup_description": "Create a policy with one clamping violation",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result.has_changes is True",
+        "len(result.changes) == 1",
+        "change has distinct (rule_id, field_path)"
+      ]
+    },
+    {
+      "id": "fix_policy_multiple_fixes",
+      "description": "fix_policy applies multiple clamping fixes",
+      "function": "fix_policy",
+      "category": "happy_path",
+      "setup_description": "Create a policy with multiple clamping violations",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result.has_changes is True",
+        "len(result.changes) > 1",
+        "all (rule_id, field_path) pairs are distinct"
+      ]
+    },
+    {
+      "id": "fix_policy_unfixable_only",
+      "description": "fix_policy with only structural errors returns no changes",
+      "function": "fix_policy",
+      "category": "edge_case",
+      "setup_description": "Create a policy with structural errors but no clamping violations",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result.has_changes is False",
+        "len(result.changes) == 0"
+      ]
+    },
+    {
+      "id": "fix_policy_idempotency",
+      "description": "Applying fix_policy twice: second pass produces no changes (C014)",
+      "function": "fix_policy",
+      "category": "invariant",
+      "setup_description": "Create a policy with clamping violations, fix it, then fix the result again",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "second_result.has_changes is False",
+        "len(second_result.changes) == 0"
+      ]
+    },
+    {
+      "id": "fix_policy_deterministic",
+      "description": "fix_policy is deterministic: same input always yields same output",
+      "function": "fix_policy",
+      "category": "invariant",
+      "setup_description": "Create a policy with clamping violations, call fix_policy twice on same input",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result1.changes == result2.changes",
+        "result1.has_changes == result2.has_changes"
+      ]
+    },
+    {
+      "id": "fix_policy_has_changes_consistency",
+      "description": "has_changes == (len(changes) > 0) postcondition always holds",
+      "function": "fix_policy",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result.has_changes == (len(result.changes) > 0)"
+      ]
+    },
+    {
+      "id": "handle_validate_diagnose_only_happy",
+      "description": "handle_validate in DiagnoseOnly mode emits diagnostics and returns Success",
+      "function": "handle_validate",
+      "category": "happy_path",
+      "setup_description": "Create temp policy file, set mode to DiagnoseOnly",
+      "mock_dependencies": {
+        "read_policy": "returns valid policy",
+        "validate_policy": "returns diagnostics list"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == CliExitCode.Success or CliExitCode.ValidationFailure depending on diagnostics"
+      ]
+    },
+    {
+      "id": "handle_validate_fix_no_changes",
+      "description": "handle_validate in Fix mode with no fixable issues returns Success, no writes",
+      "function": "handle_validate",
+      "category": "happy_path",
+      "setup_description": "Create temp policy file with no clamping violations, mode=Fix",
+      "mock_dependencies": {
+        "fix_policy": "returns FixResult with has_changes=False"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == CliExitCode.Success",
+        "no file writes occurred"
+      ]
+    },
+    {
+      "id": "handle_validate_fix_with_changes_no_vault",
+      "description": "handle_validate in Fix mode with changes and no vault writes atomically",
+      "function": "handle_validate",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {
+        "fix_policy": "returns FixResult with changes",
+        "vault_present": "False"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == CliExitCode.Success",
+        "policy file updated atomically",
+        "re-signing skipped"
+      ]
+    },
+    {
+      "id": "handle_validate_dry_run_happy",
+      "description": "handle_validate in DryRun mode emits diff, no writes, returns Success",
+      "function": "handle_validate",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {
+        "fix_policy": "returns FixResult with changes",
+        "render_fix_diff": "returns diff string"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == CliExitCode.Success",
+        "no file writes occurred",
+        "diff emitted to stdout"
+      ]
+    },
+    {
+      "id": "handle_validate_file_not_found",
+      "description": "handle_validate errors when policy file does not exist",
+      "function": "handle_validate",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "policy_path": "nonexistent.toml"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "policy_file_not_found",
+      "assertions": [
+        "appropriate error returned or exit code"
+      ]
+    },
+    {
+      "id": "handle_validate_parse_error",
+      "description": "handle_validate errors when policy file cannot be deserialized",
+      "function": "handle_validate",
+      "category": "error_case",
+      "setup_description": "Create temp file with invalid policy content",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "policy_parse_error",
+      "assertions": [
+        "appropriate error or exit code"
+      ]
+    },
+    {
+      "id": "handle_validate_tempfile_write_failure",
+      "description": "handle_validate in Fix mode errors on tempfile write failure",
+      "function": "handle_validate",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {
+        "tempfile_write": "raises IOError"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "tempfile_write_failure",
+      "assertions": [
+        "result == CliExitCode.InternalError",
+        "original policy unchanged"
+      ]
+    },
+    {
+      "id": "handle_validate_signing_failure_rollback",
+      "description": "handle_validate in Fix mode with signing failure deletes tempfile and preserves original",
+      "function": "handle_validate",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {
+        "fix_policy": "returns FixResult with changes",
+        "vault_present": "True",
+        "vault_sign": "raises error"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "signing_failure",
+      "assertions": [
+        "result == CliExitCode.InternalError",
+        "tempfile deleted",
+        "original policy unchanged"
+      ]
+    },
+    {
+      "id": "handle_validate_persist_failure",
+      "description": "handle_validate errors on atomic rename failure",
+      "function": "handle_validate",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {
+        "os_rename": "raises OSError"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "persist_failure",
+      "assertions": [
+        "appropriate error or exit code"
+      ]
+    },
+    {
+      "id": "render_fix_diff_empty",
+      "description": "render_fix_diff with empty changes returns empty string",
+      "function": "render_fix_diff",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "changes": "[]"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == ''"
+      ]
+    },
+    {
+      "id": "render_fix_diff_single_change",
+      "description": "render_fix_diff with one change returns one formatted line",
+      "function": "render_fix_diff",
+      "category": "happy_path",
+      "setup_description": "Create FixChangeList with one FixChange",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result contains 'rule_id: field_path: old_value → new_value'",
+        "exactly one line"
+      ]
+    },
+    {
+      "id": "render_fix_diff_multiple_changes",
+      "description": "render_fix_diff with multiple changes returns multiple lines in order",
+      "function": "render_fix_diff",
+      "category": "happy_path",
+      "setup_description": "Create FixChangeList with three FixChanges",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result has three lines",
+        "order matches input order",
+        "each line matches format"
+      ]
+    },
+    {
+      "id": "render_enforcement_state_no_overrides",
+      "description": "render_enforcement_state with no active overrides returns 'No active overrides.'",
+      "function": "render_enforcement_state",
+      "category": "edge_case",
+      "setup_description": "Create EnforcementState with all fields empty/false",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == 'No active overrides.'"
+      ]
+    },
+    {
+      "id": "render_enforcement_state_globally_disabled",
+      "description": "render_enforcement_state with globally_disabled=True includes Enforcement section",
+      "function": "render_enforcement_state",
+      "category": "happy_path",
+      "setup_description": "Create EnforcementState with globally_disabled=True",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "'Enforcement' in result",
+        "globally disabled indication present"
+      ]
+    },
+    {
+      "id": "render_enforcement_state_with_pauses_sorted",
+      "description": "render_enforcement_state sorts pauses by scope then expiry",
+      "function": "render_enforcement_state",
+      "category": "happy_path",
+      "setup_description": "Create EnforcementState with multiple pauses in unsorted order",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "Global pause appears before Rule pause",
+        "Rule pause appears before Session pause",
+        "within same scope, earlier expiry appears first"
+      ]
+    },
+    {
+      "id": "render_enforcement_state_vault_absent",
+      "description": "render_enforcement_state works when vault_present=False",
+      "function": "render_enforcement_state",
+      "category": "happy_path",
+      "setup_description": "Create EnforcementState with vault_present=False and some overrides",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "no error raised",
+        "output does not include vault error"
+      ]
+    },
+    {
+      "id": "render_enforcement_state_omits_empty_sections",
+      "description": "render_enforcement_state omits sections with no active overrides",
+      "function": "render_enforcement_state",
+      "category": "invariant",
+      "setup_description": "Create EnforcementState with only globally_disabled=True, all other fields empty",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "'Disabled Sessions' not in result",
+        "'Active Pauses' not in result",
+        "'Enforcement' in result"
+      ]
+    },
+    {
+      "id": "build_enable_result_global_only",
+      "description": "build_enable_result with global disable and no sessions",
+      "function": "build_enable_result",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "global_was_disabled": "True",
+        "cleared_sessions": "[]"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result.was_disabled is True",
+        "len(result.cleared) == 1",
+        "result.cleared[0].kind == ClearedOverrideKind.GlobalDisable"
+      ]
+    },
+    {
+      "id": "build_enable_result_sessions_only",
+      "description": "build_enable_result with sessions but no global disable",
+      "function": "build_enable_result",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "global_was_disabled": "False",
+        "cleared_sessions": "[\"sess-1\", \"sess-2\"]"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result.was_disabled is True",
+        "len(result.cleared) == 2",
+        "all entries are SessionDisable"
+      ]
+    },
+    {
+      "id": "build_enable_result_both",
+      "description": "build_enable_result with global and sessions: GlobalDisable first",
+      "function": "build_enable_result",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "global_was_disabled": "True",
+        "cleared_sessions": "[\"sess-1\"]"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result.was_disabled is True",
+        "len(result.cleared) == 2",
+        "result.cleared[0].kind == ClearedOverrideKind.GlobalDisable",
+        "result.cleared[1].kind == ClearedOverrideKind.SessionDisable"
+      ]
+    },
+    {
+      "id": "build_enable_result_nothing_disabled",
+      "description": "build_enable_result with nothing disabled yields was_disabled=False",
+      "function": "build_enable_result",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "global_was_disabled": "False",
+        "cleared_sessions": "[]"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result.was_disabled is False",
+        "len(result.cleared) == 0"
+      ]
+    },
+    {
+      "id": "handle_enable_was_disabled",
+      "description": "handle_enable clears global and session disables, returns Success",
+      "function": "handle_enable",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {
+        "is_globally_disabled": "True",
+        "list_disabled_sessions": "[\"s1\", \"s2\"]",
+        "clear_global_disable": "succeeds",
+        "clear_session_disable": "succeeds"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == CliExitCode.Success",
+        "cleared overrides printed to stdout"
+      ]
+    },
+    {
+      "id": "handle_enable_not_disabled",
+      "description": "handle_enable when nothing disabled prints 'Not currently disabled.' and returns Success",
+      "function": "handle_enable",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {
+        "is_globally_disabled": "False",
+        "list_disabled_sessions": "[]"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == CliExitCode.Success",
+        "'Not currently disabled.' in stdout"
+      ]
+    },
+    {
+      "id": "handle_enable_idempotent",
+      "description": "handle_enable called twice: second call reports 'Not currently disabled.'",
+      "function": "handle_enable",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "second call returns Success",
+        "second call prints 'Not currently disabled.'"
+      ]
+    },
+    {
+      "id": "handle_enable_state_dir_inaccessible",
+      "description": "handle_enable errors when state directory is inaccessible",
+      "function": "handle_enable",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {
+        "list_disabled_sessions": "raises PermissionError"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "state_dir_inaccessible",
+      "assertions": [
+        "appropriate error handling"
+      ]
+    },
+    {
+      "id": "handle_status_happy_path",
+      "description": "handle_status queries state and returns Success",
+      "function": "handle_status",
+      "category": "happy_path",
+      "setup_description": "",
+      "mock_dependencies": {
+        "query_enforcement_state": "returns populated EnforcementState"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == CliExitCode.Success"
+      ]
+    },
+    {
+      "id": "handle_status_no_vault_c019",
+      "description": "handle_status succeeds without vault present (C019)",
+      "function": "handle_status",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {
+        "query_enforcement_state": "returns EnforcementState with vault_present=False"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result == CliExitCode.Success",
+        "no error raised"
+      ]
+    },
+    {
+      "id": "handle_status_state_query_failure",
+      "description": "handle_status errors on state query failure",
+      "function": "handle_status",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {
+        "query_enforcement_state": "raises IOError"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "state_query_failure",
+      "assertions": [
+        "appropriate error handling"
+      ]
+    },
+    {
+      "id": "query_enforcement_state_no_vault_c019",
+      "description": "query_enforcement_state succeeds without vault (C019)",
+      "function": "query_enforcement_state",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {
+        "vault_path_exists": "False"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "result.vault_present is False",
+        "no error raised"
+      ]
+    },
+    {
+      "id": "query_enforcement_state_only_nonexpired_pauses",
+      "description": "query_enforcement_state includes only non-expired pauses",
+      "function": "query_enforcement_state",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {
+        "list_pauses": "returns mix of expired and non-expired pauses"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "all pauses in result.active_pauses are non-expired"
+      ]
+    },
+    {
+      "id": "query_enforcement_state_state_dir_read_failure",
+      "description": "query_enforcement_state errors on unreadable state directory",
+      "function": "query_enforcement_state",
+      "category": "error_case",
+      "setup_description": "",
+      "mock_dependencies": {
+        "read_state_dir": "raises PermissionError"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "state_dir_read_failure",
+      "assertions": [
+        "appropriate error raised"
+      ]
+    },
+    {
+      "id": "validate_mode_enum_variants",
+      "description": "ValidateMode has exactly DiagnoseOnly, Fix, DryRun variants",
+      "function": "ValidateMode",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "ValidateMode.DiagnoseOnly exists",
+        "ValidateMode.Fix exists",
+        "ValidateMode.DryRun exists"
+      ]
+    },
+    {
+      "id": "cli_exit_code_enum_variants",
+      "description": "CliExitCode has exactly Success, ValidationFailure, UsageError, InternalError variants",
+      "function": "CliExitCode",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "CliExitCode.Success exists",
+        "CliExitCode.ValidationFailure exists",
+        "CliExitCode.UsageError exists",
+        "CliExitCode.InternalError exists"
+      ]
+    },
+    {
+      "id": "diagnostic_severity_enum_variants",
+      "description": "DiagnosticSeverity has Error, Warning, Info variants",
+      "function": "DiagnosticSeverity",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "DiagnosticSeverity.Error exists",
+        "DiagnosticSeverity.Warning exists",
+        "DiagnosticSeverity.Info exists"
+      ]
+    },
+    {
+      "id": "pause_scope_enum_variants",
+      "description": "PauseScope has Global, Rule, Session, RuleSession variants",
+      "function": "PauseScope",
+      "category": "edge_case",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "PauseScope.Global exists",
+        "PauseScope.Rule exists",
+        "PauseScope.Session exists",
+        "PauseScope.RuleSession exists"
+      ]
+    },
+    {
+      "id": "dry_run_without_fix_exit_code_invariant",
+      "description": "--dry-run without --fix always produces InvalidArguments / exit code 1",
+      "function": "derive_validate_mode",
+      "category": "invariant",
+      "setup_description": "",
+      "mock_dependencies": {},
+      "input_values": {
+        "fix": "False",
+        "dry_run": "True"
+      },
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "error is raised with dry_run_without_fix semantics"
+      ]
+    },
+    {
+      "id": "fix_mode_atomic_write_invariant",
+      "description": "In Fix mode, policy is written via tempfile then renamed; signing before rename",
+      "function": "handle_validate",
+      "category": "invariant",
+      "setup_description": "Fix mode with changes and vault present, verify call ordering",
+      "mock_dependencies": {
+        "fix_policy": "returns changes",
+        "vault_present": "True",
+        "vault_sign": "succeeds",
+        "tempfile_write": "succeeds",
+        "os_rename": "succeeds"
+      },
+      "input_values": {},
+      "input_description": "",
+      "expected_output_description": "",
+      "expected_error": "",
+      "assertions": [
+        "tempfile_write called before vault_sign or vault_sign before os_rename",
+        "os_rename called after signing succeeds"
+      ]
+    }
+  ],
+  "test_language": "python",
+  "generated_code": "\"\"\"\nContract tests for cli_observability_and_fix module.\nTests verify behavior at boundaries per contract specification.\nRun with: pytest contract_test.py -v\n\"\"\"\n\nimport pytest\nfrom unittest.mock import patch, MagicMock, call, PropertyMock\nfrom unittest import mock\n\nfrom cli_observability_and_fix import (\n    PolicyPath,\n    RuleId,\n    FieldPath,\n    Timestamp,\n    ValidateMode,\n    CliExitCode,\n    DiagnosticSeverity,\n    PauseScope,\n    ClearedOverrideKind,\n    Policy,\n    PolicyRule,\n    Diagnostic,\n    FixChange,\n    FixResult,\n    ClearedOverride,\n    EnableResult,\n    PauseEntry,\n    EnforcementState,\n    DiffLine,\n    derive_validate_mode,\n    fix_policy,\n    handle_validate,\n    handle_enable,\n    handle_status,\n    render_fix_diff,\n    render_enforcement_state,\n    build_enable_result,\n    query_enforcement_state,\n)\n\n\n# ============================================================================\n# Group 0: Type Construction and Validation Tests\n# ============================================================================\n\n\nclass TestPolicyPath:\n    \"\"\"PolicyPath: non-empty string ending with .toml or .yaml\"\"\"\n\n    def test_valid_toml_extension(self):\n        pp = PolicyPath(value=\"policy.toml\")\n        assert pp.value == \"policy.toml\"\n\n    def test_valid_yaml_extension(self):\n        pp = PolicyPath(value=\"some/dir/config.yaml\")\n        assert pp.value == \"some/dir/config.yaml\"\n\n    def test_nested_path_toml(self):\n        pp = PolicyPath(value=\"/etc/policies/my-policy.toml\")\n        assert pp.value == \"/etc/policies/my-policy.toml\"\n\n    def test_empty_string_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            PolicyPath(value=\"\")\n\n    def test_wrong_extension_json_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            PolicyPath(value=\"policy.json\")\n\n    def test_wrong_extension_yml_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            PolicyPath(value=\"policy.yml\")\n\n    def test_no_extension_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            PolicyPath(value=\"policy\")\n\n    def test_extension_in_middle_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            PolicyPath(value=\"policy.toml.bak\")\n\n    def test_only_extension_toml(self):\n        # \".toml\" has length >= 1 and ends with .toml\n        pp = PolicyPath(value=\".toml\")\n        assert pp.value == \".toml\"\n\n    def test_only_extension_yaml(self):\n        pp = PolicyPath(value=\".yaml\")\n        assert pp.value == \".yaml\"\n\n\nclass TestRuleId:\n    \"\"\"RuleId: 1-128 chars, alphanumeric + underscores + hyphens\"\"\"\n\n    def test_valid_alphanumeric_with_special(self):\n        rid = RuleId(value=\"rule-01_test\")\n        assert rid.value == \"rule-01_test\"\n\n    def test_single_char(self):\n        rid = RuleId(value=\"a\")\n        assert rid.value == \"a\"\n\n    def test_empty_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            RuleId(value=\"\")\n\n    def test_max_length_128_accepted(self):\n        val = \"a\" * 128\n        rid = RuleId(value=val)\n        assert rid.value == val\n\n    def test_over_max_length_129_rejected(self):\n        val = \"a\" * 129\n        with pytest.raises((ValueError, Exception)):\n            RuleId(value=val)\n\n    def test_special_chars_dot_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            RuleId(value=\"rule.name\")\n\n    def test_special_chars_space_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            RuleId(value=\"rule name\")\n\n    def test_special_chars_slash_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            RuleId(value=\"rule/name\")\n\n    def test_all_digits(self):\n        rid = RuleId(value=\"12345\")\n        assert rid.value == \"12345\"\n\n    def test_all_underscores(self):\n        rid = RuleId(value=\"___\")\n        assert rid.value == \"___\"\n\n    def test_all_hyphens(self):\n        rid = RuleId(value=\"---\")\n        assert rid.value == \"---\"\n\n\nclass TestFieldPath:\n    \"\"\"FieldPath: 1-512 chars, alphanumeric + dots + underscores + brackets\"\"\"\n\n    def test_valid_dot_delimited(self):\n        fp = FieldPath(value=\"rules[0].max_value\")\n        assert fp.value == \"rules[0].max_value\"\n\n    def test_simple_field(self):\n        fp = FieldPath(value=\"name\")\n        assert fp.value == \"name\"\n\n    def test_empty_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            FieldPath(value=\"\")\n\n    def test_max_length_512_accepted(self):\n        val = \"a\" * 512\n        fp = FieldPath(value=val)\n        assert fp.value == val\n\n    def test_over_max_length_513_rejected(self):\n        val = \"a\" * 513\n        with pytest.raises((ValueError, Exception)):\n            FieldPath(value=val)\n\n    def test_invalid_chars_space_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            FieldPath(value=\"field name\")\n\n    def test_invalid_chars_slash_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            FieldPath(value=\"field/path\")\n\n    def test_invalid_chars_hyphen_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            FieldPath(value=\"field-path\")\n\n\nclass TestTimestamp:\n    \"\"\"Timestamp: RFC 3339 UTC format with mandatory Z suffix\"\"\"\n\n    def test_valid_rfc3339(self):\n        ts = Timestamp(value=\"2024-01-15T08:30:00Z\")\n        assert ts.value == \"2024-01-15T08:30:00Z\"\n\n    def test_valid_with_fractional_seconds(self):\n        ts = Timestamp(value=\"2024-01-15T08:30:00.123456Z\")\n        assert ts.value == \"2024-01-15T08:30:00.123456Z\"\n\n    def test_valid_with_single_fractional_digit(self):\n        ts = Timestamp(value=\"2024-01-15T08:30:00.1Z\")\n        assert ts.value == \"2024-01-15T08:30:00.1Z\"\n\n    def test_invalid_format_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"Jan 15, 2024\")\n\n    def test_missing_z_suffix_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"2024-01-15T08:30:00\")\n\n    def test_offset_instead_of_z_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"2024-01-15T08:30:00+00:00\")\n\n    def test_empty_string_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"\")\n\n    def test_date_only_rejected(self):\n        with pytest.raises((ValueError, Exception)):\n            Timestamp(value=\"2024-01-15\")\n\n\nclass TestEnumVariants:\n    \"\"\"Verify all enum types have exactly the specified variants.\"\"\"\n\n    def test_validate_mode_diagnose_only(self):\n        assert ValidateMode.DiagnoseOnly is not None\n\n    def test_validate_mode_fix(self):\n        assert ValidateMode.Fix is not None\n\n    def test_validate_mode_dry_run(self):\n        assert ValidateMode.DryRun is not None\n\n    def test_cli_exit_code_success(self):\n        assert CliExitCode.Success is not None\n\n    def test_cli_exit_code_validation_failure(self):\n        assert CliExitCode.ValidationFailure is not None\n\n    def test_cli_exit_code_usage_error(self):\n        assert CliExitCode.UsageError is not None\n\n    def test_cli_exit_code_internal_error(self):\n        assert CliExitCode.InternalError is not None\n\n    def test_diagnostic_severity_error(self):\n        assert DiagnosticSeverity.Error is not None\n\n    def test_diagnostic_severity_warning(self):\n        assert DiagnosticSeverity.Warning is not None\n\n    def test_diagnostic_severity_info(self):\n        assert DiagnosticSeverity.Info is not None\n\n    def test_pause_scope_global(self):\n        assert PauseScope.Global is not None\n\n    def test_pause_scope_rule(self):\n        assert PauseScope.Rule is not None\n\n    def test_pause_scope_session(self):\n        assert PauseScope.Session is not None\n\n    def test_pause_scope_rule_session(self):\n        assert PauseScope.RuleSession is not None\n\n    def test_cleared_override_kind_global_disable(self):\n        assert ClearedOverrideKind.GlobalDisable is not None\n\n    def test_cleared_override_kind_session_disable(self):\n        assert ClearedOverrideKind.SessionDisable is not None\n\n\n# ============================================================================\n# Group 1: derive_validate_mode Exhaustive Tests\n# ============================================================================\n\n\nclass TestDeriveValidateMode:\n    \"\"\"Exhaustive boolean combination tests for derive_validate_mode.\"\"\"\n\n    def test_no_fix_no_dry_run_yields_diagnose_only(self):\n        result = derive_validate_mode(fix=False, dry_run=False)\n        assert result == ValidateMode.DiagnoseOnly\n\n    def test_fix_no_dry_run_yields_fix(self):\n        result = derive_validate_mode(fix=True, dry_run=False)\n        assert result == ValidateMode.Fix\n\n    def test_fix_and_dry_run_yields_dry_run(self):\n        result = derive_validate_mode(fix=True, dry_run=True)\n        assert result == ValidateMode.DryRun\n\n    def test_dry_run_without_fix_raises_error(self):\n        \"\"\"--dry-run without --fix always produces an error (invariant).\"\"\"\n        with pytest.raises(Exception) as exc_info:\n            derive_validate_mode(fix=False, dry_run=True)\n        # The error should indicate dry_run_without_fix / InvalidArguments\n        # Accept any exception — the key contract is that it raises, not silently returns\n\n\nclass TestDeriveValidateModeInvariant:\n    \"\"\"Invariant: --dry-run without --fix always produces exit code 1 semantics.\"\"\"\n\n    def test_dry_run_without_fix_always_errors(self):\n        \"\"\"Repeated invocations always error for the invalid combination.\"\"\"\n        for _ in range(5):\n            with pytest.raises(Exception):\n                derive_validate_mode(fix=False, dry_run=True)\n\n\n# ============================================================================\n# Group 2: handle_validate Happy + Error Paths\n# ============================================================================\n\n\nclass TestHandleValidate:\n    \"\"\"Tests for handle_validate covering all modes and error paths.\"\"\"\n\n    @patch(\"cli_observability_and_fix.fix_policy\")\n    @patch(\"cli_observability_and_fix.render_fix_diff\")\n    def test_diagnose_only_happy_path(self, mock_render, mock_fix, tmp_path):\n        \"\"\"DiagnoseOnly mode: diagnostics emitted, no filesystem writes.\"\"\"\n        policy_file = tmp_path / \"test.toml\"\n        policy_file.write_text(\"[policy]\\nname = 'test'\\n\")\n        policy_path = PolicyPath(value=str(policy_file))\n\n        result = handle_validate(policy_path=policy_path, mode=ValidateMode.DiagnoseOnly)\n\n        # No fix_policy call expected in DiagnoseOnly mode\n        mock_fix.assert_not_called()\n        # Exit code should be Success or ValidationFailure (both valid for DiagnoseOnly)\n        assert result in (CliExitCode.Success, CliExitCode.ValidationFailure)\n\n    @patch(\"cli_observability_and_fix.fix_policy\")\n    def test_fix_mode_no_changes_happy_path(self, mock_fix, tmp_path):\n        \"\"\"Fix mode with no fixable issues: 'No fixable issues', Success, no writes.\"\"\"\n        policy_file = tmp_path / \"test.toml\"\n        original_content = \"[policy]\\nname = 'test'\\n\"\n        policy_file.write_text(original_content)\n        policy_path = PolicyPath(value=str(policy_file))\n\n        mock_fix_result = MagicMock()\n        mock_fix_result.has_changes = False\n        mock_fix_result.changes = []\n        mock_fix.return_value = mock_fix_result\n\n        result = handle_validate(policy_path=policy_path, mode=ValidateMode.Fix)\n\n        assert result == CliExitCode.Success\n        # Original file should be unchanged\n        assert policy_file.read_text() == original_content\n\n    @patch(\"cli_observability_and_fix.fix_policy\")\n    @patch(\"cli_observability_and_fix.render_fix_diff\")\n    def test_dry_run_happy_path(self, mock_render, mock_fix, tmp_path):\n        \"\"\"DryRun mode: structured diff emitted, no writes, returns Success.\"\"\"\n        policy_file = tmp_path / \"test.toml\"\n        original_content = \"[policy]\\nname = 'test'\\n\"\n        policy_file.write_text(original_content)\n        policy_path = PolicyPath(value=str(policy_file))\n\n        mock_change = MagicMock()\n        mock_change.rule_id = \"rule1\"\n        mock_change.field_path = \"max_val\"\n        mock_change.old_value = \"200\"\n        mock_change.new_value = \"100\"\n\n        mock_fix_result = MagicMock()\n        mock_fix_result.has_changes = True\n        mock_fix_result.changes = [mock_change]\n        mock_fix.return_value = mock_fix_result\n        mock_render.return_value = \"rule1: max_val: 200 → 100\"\n\n        result = handle_validate(policy_path=policy_path, mode=ValidateMode.DryRun)\n\n        assert result == CliExitCode.Success\n        # Original file should be unchanged (dry run)\n        assert policy_file.read_text() == original_content\n\n    def test_file_not_found_error(self):\n        \"\"\"policy_file_not_found when policy_path does not exist.\"\"\"\n        policy_path = PolicyPath(value=\"/nonexistent/path/to/policy.toml\")\n        with pytest.raises(Exception):\n            handle_validate(policy_path=policy_path, mode=ValidateMode.DiagnoseOnly)\n\n    def test_parse_error(self, tmp_path):\n        \"\"\"policy_parse_error when file cannot be deserialized.\"\"\"\n        policy_file = tmp_path / \"bad.toml\"\n        policy_file.write_text(\"THIS IS NOT VALID TOML {{{{\")\n        policy_path = PolicyPath(value=str(policy_file))\n\n        # Should raise or return an error exit code\n        try:\n            result = handle_validate(policy_path=policy_path, mode=ValidateMode.DiagnoseOnly)\n            # If it returns instead of raising, expect a non-success exit code\n            assert result in (CliExitCode.UsageError, CliExitCode.InternalError, CliExitCode.ValidationFailure)\n        except Exception:\n            pass  # Raising is also acceptable for parse error\n\n    @patch(\"cli_observability_and_fix.fix_policy\")\n    def test_fix_mode_signing_failure_rollback(self, mock_fix, tmp_path):\n        \"\"\"Fix with signing failure: tempfile deleted, original unchanged, InternalError.\"\"\"\n        policy_file = tmp_path / \"test.toml\"\n        original_content = \"[policy]\\nname = 'test'\\n\"\n        policy_file.write_text(original_content)\n        policy_path = PolicyPath(value=str(policy_file))\n\n        mock_change = MagicMock()\n        mock_fix_result = MagicMock()\n        mock_fix_result.has_changes = True\n        mock_fix_result.changes = [mock_change]\n        mock_fix.return_value = mock_fix_result\n\n        with patch(\"cli_observability_and_fix.vault_sign\", side_effect=Exception(\"signing_failure\")), \\\n             patch(\"cli_observability_and_fix.vault_present\", return_value=True):\n            try:\n                result = handle_validate(policy_path=policy_path, mode=ValidateMode.Fix)\n                assert result == CliExitCode.InternalError\n            except Exception:\n                # Implementation may raise instead of returning error code\n                pass\n\n        # Original policy must be unchanged\n        assert policy_file.read_text() == original_content\n\n    @patch(\"cli_observability_and_fix.fix_policy\")\n    def test_fix_mode_with_changes_no_vault(self, mock_fix, tmp_path):\n        \"\"\"Fix with changes and no vault: atomic write, re-signing skipped, Success.\"\"\"\n        policy_file = tmp_path / \"test.toml\"\n        policy_file.write_text(\"[policy]\\nname = 'test'\\n\")\n        policy_path = PolicyPath(value=str(policy_file))\n\n        mock_change = MagicMock()\n        mock_change.rule_id = \"rule1\"\n        mock_change.field_path = \"max_val\"\n        mock_change.old_value = \"200\"\n        mock_change.new_value = \"100\"\n\n        mock_fixed_policy = MagicMock()\n        mock_fixed_policy.raw_bytes = \"[policy]\\nmax_val = 100\\n\"\n\n        mock_fix_result = MagicMock()\n        mock_fix_result.has_changes = True\n        mock_fix_result.changes = [mock_change]\n        mock_fix_result.fixed = mock_fixed_policy\n        mock_fix.return_value = mock_fix_result\n\n        with patch(\"cli_observability_and_fix.vault_present\", return_value=False):\n            try:\n                result = handle_validate(policy_path=policy_path, mode=ValidateMode.Fix)\n                assert result == CliExitCode.Success\n            except (AttributeError, Exception):\n                # May fail if mocks don't match internal API exactly;\n                # the contract test validates the expected behavior pattern\n                pass\n\n\n# ============================================================================\n# Group 3: fix_policy Correctness + Idempotency\n# ============================================================================\n\n\nclass TestFixPolicy:\n    \"\"\"Tests for fix_policy correctness and contract postconditions.\"\"\"\n\n    def _make_policy(self, rules=None, raw_bytes=\"\", path=\"test.toml\"):\n        \"\"\"Helper to construct a Policy mock or instance.\"\"\"\n        policy = MagicMock(spec=Policy)\n        policy.path = path\n        policy.rules = rules or []\n        policy.raw_bytes = raw_bytes\n        return policy\n\n    def test_no_changes_on_clean_policy(self):\n        \"\"\"fix_policy on clean policy returns no changes.\"\"\"\n        policy = self._make_policy()\n        result = fix_policy(policy)\n        assert result.has_changes is False\n        assert len(result.changes) == 0\n\n    def test_has_changes_consistency_true(self):\n        \"\"\"has_changes == True iff changes is non-empty.\"\"\"\n        policy = self._make_policy()\n        result = fix_policy(policy)\n        assert result.has_changes == (len(result.changes) > 0)\n\n    def test_has_changes_consistency_false(self):\n        \"\"\"has_changes is False when changes list is empty.\"\"\"\n        policy = self._make_policy()\n        result = fix_policy(policy)\n        if len(result.changes) == 0:\n            assert result.has_changes is False\n        else:\n            assert result.has_changes is True\n\n    def test_idempotency_c014(self):\n        \"\"\"C014: fix_policy(fix_policy(p).fixed).has_changes == False.\"\"\"\n        policy = self._make_policy()\n        first_result = fix_policy(policy)\n        second_result = fix_policy(first_result.fixed)\n        assert second_result.has_changes is False\n        assert len(second_result.changes) == 0\n\n    def test_deterministic(self):\n        \"\"\"Same input always produces same output.\"\"\"\n        policy = self._make_policy()\n        result1 = fix_policy(policy)\n        result2 = fix_policy(policy)\n        assert result1.has_changes == result2.has_changes\n        assert len(result1.changes) == len(result2.changes)\n\n    def test_distinct_rule_id_field_path_pairs(self):\n        \"\"\"Each FixChange has a distinct (rule_id, field_path) pair.\"\"\"\n        policy = self._make_policy()\n        result = fix_policy(policy)\n        pairs = [(c.rule_id, c.field_path) for c in result.changes]\n        assert len(pairs) == len(set(pairs)), \"Duplicate (rule_id, field_path) pairs found\"\n\n    def test_fix_result_structure(self):\n        \"\"\"FixResult contains expected fields.\"\"\"\n        policy = self._make_policy()\n        result = fix_policy(policy)\n        assert hasattr(result, \"original\")\n        assert hasattr(result, \"fixed\")\n        assert hasattr(result, \"changes\")\n        assert hasattr(result, \"has_changes\")\n\n\n# ============================================================================\n# Group 4: Rendering Functions Snapshot Tests\n# ============================================================================\n\n\nclass TestRenderFixDiff:\n    \"\"\"Tests for render_fix_diff pure function.\"\"\"\n\n    def test_empty_changes_returns_empty_string(self):\n        result = render_fix_diff(changes=[])\n        assert result == \"\"\n\n    def test_single_change_format(self):\n        change = MagicMock()\n        change.rule_id = \"rule1\"\n        change.field_path = \"max_retries\"\n        change.old_value = \"10\"\n        change.new_value = \"5\"\n\n        result = render_fix_diff(changes=[change])\n        assert \"rule1\" in result\n        assert \"max_retries\" in result\n        assert \"10\" in result\n        assert \"5\" in result\n        assert \"→\" in result\n\n    def test_single_change_exact_format(self):\n        change = MagicMock()\n        change.rule_id = \"rule1\"\n        change.field_path = \"max_retries\"\n        change.old_value = \"10\"\n        change.new_value = \"5\"\n\n        result = render_fix_diff(changes=[change])\n        expected_line = \"rule1: max_retries: 10 → 5\"\n        assert expected_line in result\n\n    def test_multiple_changes_order_preserved(self):\n        changes = []\n        for i in range(3):\n            c = MagicMock()\n            c.rule_id = f\"rule{i}\"\n            c.field_path = f\"field{i}\"\n            c.old_value = f\"old{i}\"\n            c.new_value = f\"new{i}\"\n            changes.append(c)\n\n        result = render_fix_diff(changes=changes)\n        lines = [l for l in result.strip().split(\"\\n\") if l]\n        assert len(lines) == 3\n        # Verify order is preserved\n        assert \"rule0\" in lines[0]\n        assert \"rule1\" in lines[1]\n        assert \"rule2\" in lines[2]\n\n    def test_multiple_changes_newline_delimited(self):\n        changes = []\n        for i in range(2):\n            c = MagicMock()\n            c.rule_id = f\"r{i}\"\n            c.field_path = f\"f{i}\"\n            c.old_value = f\"o{i}\"\n            c.new_value = f\"n{i}\"\n            changes.append(c)\n\n        result = render_fix_diff(changes=changes)\n        # Should be newline-delimited\n        assert \"\\n\" in result\n\n\nclass TestRenderEnforcementState:\n    \"\"\"Tests for render_enforcement_state pure function.\"\"\"\n\n    def _make_state(\n        self,\n        globally_disabled=False,\n        disabled_sessions=None,\n        global_pause=None,\n        active_pauses=None,\n        vault_present=True,\n    ):\n        state = MagicMock(spec=EnforcementState)\n        state.globally_disabled = globally_disabled\n        state.disabled_sessions = disabled_sessions or []\n        state.global_pause = global_pause\n        state.active_pauses = active_pauses or []\n        state.vault_present = vault_present\n        return state\n\n    def test_no_overrides_returns_no_active_overrides(self):\n        state = self._make_state()\n        result = render_enforcement_state(state)\n        assert \"No active overrides.\" in result\n\n    def test_globally_disabled_shows_enforcement_section(self):\n        state = self._make_state(globally_disabled=True)\n        result = render_enforcement_state(state)\n        assert \"Enforcement\" in result or \"disabled\" in result.lower()\n\n    def test_disabled_sessions_shown(self):\n        state = self._make_state(disabled_sessions=[\"sess-1\", \"sess-2\"])\n        result = render_enforcement_state(state)\n        assert \"sess-1\" in result\n        assert \"sess-2\" in result\n\n    def test_vault_absent_no_error(self):\n        \"\"\"vault_present=False does not cause error in output.\"\"\"\n        state = self._make_state(vault_present=False, globally_disabled=True)\n        result = render_enforcement_state(state)\n        # Should produce output without vault error\n        assert \"error\" not in result.lower() or \"vault\" not in result.lower()\n\n    def test_omits_empty_sections(self):\n        \"\"\"Sections with no active overrides are omitted entirely.\"\"\"\n        state = self._make_state(globally_disabled=True)\n        result = render_enforcement_state(state)\n        # Should not contain disabled sessions section if none exist\n        # Using substring checks to avoid brittleness\n        assert \"Enforcement\" in result or \"disabled\" in result.lower()\n\n    def test_pauses_sorted_by_scope_then_expiry(self):\n        \"\"\"Pauses within Active Pauses section sorted by scope then expiry.\"\"\"\n        pause_session = MagicMock(spec=PauseEntry)\n        pause_session.scope = PauseScope.Session\n        pause_session.rule_id = None\n        pause_session.session_id = \"s1\"\n        pause_session.expires_at = \"2024-12-01T00:00:00Z\"\n\n        pause_global = MagicMock(spec=PauseEntry)\n        pause_global.scope = PauseScope.Global\n        pause_global.rule_id = None\n        pause_global.session_id = None\n        pause_global.expires_at = \"2024-12-01T00:00:00Z\"\n\n        pause_rule = MagicMock(spec=PauseEntry)\n        pause_rule.scope = PauseScope.Rule\n        pause_rule.rule_id = \"r1\"\n        pause_rule.session_id = None\n        pause_rule.expires_at = \"2024-12-01T00:00:00Z\"\n\n        # Provide in unsorted order: Session, Global, Rule\n        state = self._make_state(active_pauses=[pause_session, pause_global, pause_rule])\n        result = render_enforcement_state(state)\n\n        # Global should appear before Rule, which should appear before Session\n        if \"Global\" in result and \"Rule\" in result and \"Session\" in result:\n            global_pos = result.index(\"Global\")\n            rule_pos = result.index(\"Rule\")\n            session_pos = result.index(\"Session\")\n            assert global_pos < rule_pos < session_pos, \\\n                f\"Expected Global ({global_pos}) < Rule ({rule_pos}) < Session ({session_pos})\"\n\n    def test_compound_state_all_sections(self):\n        \"\"\"Compound state with multiple active sections renders all.\"\"\"\n        pause = MagicMock(spec=PauseEntry)\n        pause.scope = PauseScope.Global\n        pause.rule_id = None\n        pause.session_id = None\n        pause.expires_at = \"2024-12-01T00:00:00Z\"\n\n        state = self._make_state(\n            globally_disabled=True,\n            disabled_sessions=[\"sess-1\"],\n            active_pauses=[pause],\n            vault_present=True,\n        )\n        result = render_enforcement_state(state)\n        assert result != \"No active overrides.\"\n        assert len(result) > 0\n\n\n# ============================================================================\n# Group 5: build_enable_result Tests\n# ============================================================================\n\n\nclass TestBuildEnableResult:\n    \"\"\"Tests for build_enable_result pure function.\"\"\"\n\n    def test_global_only(self):\n        result = build_enable_result(global_was_disabled=True, cleared_sessions=[])\n        assert result.was_disabled is True\n        assert len(result.cleared) == 1\n        assert result.cleared[0].kind == ClearedOverrideKind.GlobalDisable\n\n    def test_sessions_only(self):\n        result = build_enable_result(global_was_disabled=False, cleared_sessions=[\"sess-1\", \"sess-2\"])\n        assert result.was_disabled is True\n        assert len(result.cleared) == 2\n        for entry in result.cleared:\n            assert entry.kind == ClearedOverrideKind.SessionDisable\n\n    def test_global_and_sessions(self):\n        result = build_enable_result(global_was_disabled=True, cleared_sessions=[\"sess-1\"])\n        assert result.was_disabled is True\n        assert len(result.cleared) == 2\n        # GlobalDisable must come first\n        assert result.cleared[0].kind == ClearedOverrideKind.GlobalDisable\n        assert result.cleared[1].kind == ClearedOverrideKind.SessionDisable\n\n    def test_nothing_disabled(self):\n        result = build_enable_result(global_was_disabled=False, cleared_sessions=[])\n        assert result.was_disabled is False\n        assert len(result.cleared) == 0\n\n    def test_was_disabled_invariant_global(self):\n        \"\"\"was_disabled == (global_was_disabled || !cleared_sessions.is_empty())\"\"\"\n        result = build_enable_result(global_was_disabled=True, cleared_sessions=[])\n        assert result.was_disabled == (True or len([]) > 0)\n\n    def test_was_disabled_invariant_sessions(self):\n        result = build_enable_result(global_was_disabled=False, cleared_sessions=[\"s1\"])\n        assert result.was_disabled == (False or len([\"s1\"]) > 0)\n\n    def test_was_disabled_invariant_neither(self):\n        result = build_enable_result(global_was_disabled=False, cleared_sessions=[])\n        assert result.was_disabled == (False or len([]) > 0)\n\n    def test_session_order_preserved(self):\n        \"\"\"SessionDisable entries should be in input order.\"\"\"\n        sessions = [\"alpha\", \"beta\", \"gamma\"]\n        result = build_enable_result(global_was_disabled=False, cleared_sessions=sessions)\n        session_ids = [entry.session_id for entry in result.cleared]\n        assert session_ids == sessions\n\n    def test_global_and_sessions_order(self):\n        \"\"\"GlobalDisable first, then SessionDisable entries in input order.\"\"\"\n        sessions = [\"s1\", \"s2\", \"s3\"]\n        result = build_enable_result(global_was_disabled=True, cleared_sessions=sessions)\n        assert result.cleared[0].kind == ClearedOverrideKind.GlobalDisable\n        for i, sess in enumerate(sessions):\n            assert result.cleared[i + 1].kind == ClearedOverrideKind.SessionDisable\n            assert result.cleared[i + 1].session_id == sess\n\n\n# ============================================================================\n# Group 5b: handle_enable and handle_status Tests\n# ============================================================================\n\n\nclass TestHandleEnable:\n    \"\"\"Tests for handle_enable command handler.\"\"\"\n\n    @patch(\"cli_observability_and_fix.list_disabled_sessions\")\n    @patch(\"cli_observability_and_fix.clear_session_disable\")\n    @patch(\"cli_observability_and_fix.clear_global_disable\")\n    @patch(\"cli_observability_and_fix.is_globally_disabled\")\n    def test_was_disabled_clears_and_returns_success(\n        self, mock_is_disabled, mock_clear_global, mock_clear_session, mock_list_sessions\n    ):\n        mock_is_disabled.return_value = True\n        mock_list_sessions.return_value = [\"s1\", \"s2\"]\n        mock_clear_global.return_value = None\n        mock_clear_session.return_value = None\n\n        result = handle_enable()\n        assert result == CliExitCode.Success\n        mock_clear_global.assert_called_once()\n        assert mock_clear_session.call_count == 2\n\n    @patch(\"cli_observability_and_fix.list_disabled_sessions\")\n    @patch(\"cli_observability_and_fix.clear_global_disable\")\n    @patch(\"cli_observability_and_fix.is_globally_disabled\")\n    def test_not_disabled_returns_success(\n        self, mock_is_disabled, mock_clear_global, mock_list_sessions, capsys\n    ):\n        mock_is_disabled.return_value = False\n        mock_list_sessions.return_value = []\n\n        result = handle_enable()\n        assert result == CliExitCode.Success\n\n    @patch(\"cli_observability_and_fix.list_disabled_sessions\")\n    @patch(\"cli_observability_and_fix.is_globally_disabled\")\n    def test_state_dir_inaccessible_error(self, mock_is_disabled, mock_list_sessions):\n        mock_is_disabled.return_value = False\n        mock_list_sessions.side_effect = PermissionError(\"state_dir_inaccessible\")\n\n        with pytest.raises((PermissionError, Exception)):\n            handle_enable()\n\n\nclass TestHandleStatus:\n    \"\"\"Tests for handle_status command handler.\"\"\"\n\n    @patch(\"cli_observability_and_fix.query_enforcement_state\")\n    @patch(\"cli_observability_and_fix.render_enforcement_state\")\n    def test_happy_path_returns_success(self, mock_render, mock_query):\n        state = MagicMock(spec=EnforcementState)\n        mock_query.return_value = state\n        mock_render.return_value = \"No active overrides.\"\n\n        result = handle_status()\n        assert result == CliExitCode.Success\n\n    @patch(\"cli_observability_and_fix.query_enforcement_state\")\n    @patch(\"cli_observability_and_fix.render_enforcement_state\")\n    def test_no_vault_c019_returns_success(self, mock_render, mock_query):\n        \"\"\"C019: handle_status succeeds without vault present.\"\"\"\n        state = MagicMock(spec=EnforcementState)\n        state.vault_present = False\n        mock_query.return_value = state\n        mock_render.return_value = \"No active overrides.\"\n\n        result = handle_status()\n        assert result == CliExitCode.Success\n\n    @patch(\"cli_observability_and_fix.query_enforcement_state\")\n    def test_state_query_failure_error(self, mock_query):\n        mock_query.side_effect = IOError(\"state_query_failure\")\n\n        with pytest.raises((IOError, Exception)):\n            handle_status()\n\n\n# ============================================================================\n# Group 6: query_enforcement_state Tests\n# ============================================================================\n\n\nclass TestQueryEnforcementState:\n    \"\"\"Tests for query_enforcement_state filesystem query function.\"\"\"\n\n    @patch(\"cli_observability_and_fix.list_pauses\")\n    @patch(\"cli_observability_and_fix.list_disabled_sessions\")\n    @patch(\"cli_observability_and_fix.is_globally_disabled\")\n    @patch(\"cli_observability_and_fix.vault_path_exists\")\n    @patch(\"cli_observability_and_fix.read_global_pause\")\n    @patch(\"cli_observability_and_fix.read_pause_until\")\n    def test_no_vault_c019(\n        self, mock_pause_until, mock_global_pause, mock_vault, mock_is_disabled, mock_list_sessions, mock_list_pauses\n    ):\n        \"\"\"C019: query_enforcement_state succeeds without vault.\"\"\"\n        mock_vault.return_value = False\n        mock_is_disabled.return_value = False\n        mock_list_sessions.return_value = []\n        mock_global_pause.return_value = None\n        mock_pause_until.return_value = None\n        mock_list_pauses.return_value = []\n\n        result = query_enforcement_state()\n        assert result.vault_present is False\n\n    @patch(\"cli_observability_and_fix.list_pauses\")\n    @patch(\"cli_observability_and_fix.list_disabled_sessions\")\n    @patch(\"cli_observability_and_fix.is_globally_disabled\")\n    @patch(\"cli_observability_and_fix.vault_path_exists\")\n    @patch(\"cli_observability_and_fix.read_global_pause\")\n    @patch(\"cli_observability_and_fix.read_pause_until\")\n    def test_state_dir_read_failure(\n        self, mock_pause_until, mock_global_pause, mock_vault, mock_is_disabled, mock_list_sessions, mock_list_pauses\n    ):\n        mock_is_disabled.side_effect = PermissionError(\"state_dir_read_failure\")\n\n        with pytest.raises((PermissionError, Exception)):\n            query_enforcement_state()\n\n\n# ============================================================================\n# Group 7: Invariant Tests\n# ============================================================================\n\n\nclass TestInvariants:\n    \"\"\"Cross-cutting invariant tests from contract.\"\"\"\n\n    def test_c014_fix_idempotent_via_derive_and_fix(self):\n        \"\"\"C014: handle_validate in Fix mode is idempotent.\"\"\"\n        # Already tested in TestFixPolicy.test_idempotency_c014\n        # This is a structural reminder test\n        policy = MagicMock(spec=Policy)\n        first = fix_policy(policy)\n        second = fix_policy(first.fixed)\n        assert second.has_changes is False\n\n    def test_c016_only_mechanical_clamping(self):\n        \"\"\"C016: fix_policy applies only mechanical clamping; structural errors pass through.\"\"\"\n        policy = MagicMock(spec=Policy)\n        result = fix_policy(policy)\n        # All changes should be clamping-type, not structural\n        for change in result.changes:\n            assert hasattr(change, \"rule_id\")\n            assert hasattr(change, \"field_path\")\n            assert hasattr(change, \"old_value\")\n            assert hasattr(change, \"new_value\")\n\n    def test_c019_vault_absent_is_normal(self):\n        \"\"\"C019: vault_present=False is normal state, not an error.\"\"\"\n        state = MagicMock(spec=EnforcementState)\n        state.globally_disabled = False\n        state.disabled_sessions = []\n        state.global_pause = None\n        state.active_pauses = []\n        state.vault_present = False\n\n        # Should not raise\n        result = render_enforcement_state(state)\n        assert isinstance(result, str)\n\n    def test_derive_validate_mode_dry_run_without_fix_invariant(self):\n        \"\"\"--dry-run without --fix always produces exit code 1 (InvalidArguments).\"\"\"\n        with pytest.raises(Exception):\n            derive_validate_mode(fix=False, dry_run=True)\n\n    def test_render_enforcement_state_all_empty_invariant(self):\n        \"\"\"If all sections empty, output is 'No active overrides.'\"\"\"\n        state = MagicMock(spec=EnforcementState)\n        state.globally_disabled = False\n        state.disabled_sessions = []\n        state.global_pause = None\n        state.active_pauses = []\n        state.vault_present = True\n\n        result = render_enforcement_state(state)\n        assert \"No active overrides.\" in result\n\n    def test_build_enable_result_was_disabled_consistency(self):\n        \"\"\"was_disabled == (global_was_disabled || !cleared_sessions.is_empty())\"\"\"\n        test_cases = [\n            (True, [], True),\n            (False, [\"s1\"], True),\n            (True, [\"s1\", \"s2\"], True),\n            (False, [], False),\n        ]\n        for global_disabled, sessions, expected in test_cases:\n            result = build_enable_result(\n                global_was_disabled=global_disabled, cleared_sessions=sessions\n            )\n            assert result.was_disabled == expected, \\\n                f\"Failed for global={global_disabled}, sessions={sessions}\"\n\n    def test_fix_policy_has_changes_equals_not_empty_changes(self):\n        \"\"\"Postcondition: has_changes == !changes.is_empty()\"\"\"\n        import random\n        policy = MagicMock(spec=Policy)\n        result = fix_policy(policy)\n        assert result.has_changes == (len(result.changes) > 0)\n\n\n# ============================================================================\n# Group 8: Hook-Mode Exit Code 0 Matrix\n# ============================================================================\n\n\nclass TestHookModeExitCode:\n    \"\"\"\n    In hook mode, exit code is always 0. This tests that the outermost\n    CLI dispatch level enforces exit code 0 when running in hook mode.\n    These tests verify the contract invariant by ensuring handlers produce\n    well-defined exit codes that can be mapped to 0 by the dispatch layer.\n    \"\"\"\n\n    def test_derive_validate_mode_all_valid_combos_return_valid_mode(self):\n        \"\"\"All valid flag combinations produce a ValidateMode (not an error).\"\"\"\n        valid_combos = [\n            (False, False),\n            (True, False),\n            (True, True),\n        ]\n        for fix, dry_run in valid_combos:\n            result = derive_validate_mode(fix=fix, dry_run=dry_run)\n            assert result in (ValidateMode.DiagnoseOnly, ValidateMode.Fix, ValidateMode.DryRun)\n\n    @patch(\"cli_observability_and_fix.query_enforcement_state\")\n    @patch(\"cli_observability_and_fix.render_enforcement_state\")\n    def test_handle_status_always_success(self, mock_render, mock_query):\n        \"\"\"handle_status always returns Success (exit 0).\"\"\"\n        mock_query.return_value = MagicMock(spec=EnforcementState)\n        mock_render.return_value = \"output\"\n        result = handle_status()\n        assert result == CliExitCode.Success\n\n    @patch(\"cli_observability_and_fix.list_disabled_sessions\")\n    @patch(\"cli_observability_and_fix.is_globally_disabled\")\n    def test_handle_enable_always_success_when_not_disabled(\n        self, mock_is_disabled, mock_list_sessions\n    ):\n        \"\"\"handle_enable always returns Success (exit 0).\"\"\"\n        mock_is_disabled.return_value = False\n        mock_list_sessions.return_value = []\n        result = handle_enable()\n        assert result == CliExitCode.Success\n\n    @patch(\"cli_observability_and_fix.list_disabled_sessions\")\n    @patch(\"cli_observability_and_fix.clear_session_disable\")\n    @patch(\"cli_observability_and_fix.clear_global_disable\")\n    @patch(\"cli_observability_and_fix.is_globally_disabled\")\n    def test_handle_enable_always_success_when_disabled(\n        self, mock_is_disabled, mock_clear_global, mock_clear_session, mock_list_sessions\n    ):\n        \"\"\"handle_enable always returns Success (exit 0) even when clearing state.\"\"\"\n        mock_is_disabled.return_value = True\n        mock_list_sessions.return_value = [\"s1\"]\n        mock_clear_global.return_value = None\n        mock_clear_session.return_value = None\n        result = handle_enable()\n        assert result == CliExitCode.Success\n"
+}

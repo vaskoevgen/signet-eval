@@ -15,11 +15,29 @@ fn policy_path() -> PathBuf {
     vault::signet_dir().join("policy.yaml")
 }
 
+fn rules_path() -> PathBuf {
+    vault::signet_dir().join("rules.yaml")
+}
+
 fn load_policy_raw() -> PolicyConfig {
     let path = policy_path();
     match std::fs::read_to_string(&path) {
         Ok(content) => serde_yaml::from_str(&content).unwrap_or_default(),
         Err(_) => PolicyConfig::default(),
+    }
+}
+
+fn load_rules_raw() -> Vec<PolicyRule> {
+    crate::policy::load_rules(&rules_path())
+}
+
+fn save_rules(rules: &[PolicyRule]) {
+    let path = rules_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    if let Ok(yaml) = serde_yaml::to_string(rules) {
+        std::fs::write(&path, &yaml).ok();
     }
 }
 
@@ -33,11 +51,13 @@ fn save_policy(config: &PolicyConfig) {
     }
 }
 
-/// Auto-sign the policy after MCP modifications (if vault is available).
-fn auto_sign_policy() {
+/// Auto-sign both policy and rules files after MCP modifications (if vault is available).
+fn auto_sign() {
     if let Some(v) = vault::try_load_vault() {
-        let path = policy_path();
-        let _ = vault::sign_policy(v.session_key(), &path);
+        let _ = vault::sign_policy(v.session_key(), &policy_path());
+        if rules_path().exists() {
+            let _ = vault::sign_policy(v.session_key(), &rules_path());
+        }
     }
 }
 
@@ -272,16 +292,25 @@ impl ServerHandler for SignetMcpServer {
 
 fn handle_list_rules() -> String {
     let config = load_policy_raw();
-    if config.rules.is_empty() {
+    let user_rules = load_rules_raw();
+    let merged = crate::policy::merge_rules(&config.rules, &user_rules);
+    if merged.is_empty() {
         return format!("No rules. Default action: {:?}. Everything is allowed.", config.default_action);
     }
+    let user_names: std::collections::HashSet<&str> = user_rules.iter().map(|r| r.name.as_str()).collect();
     let mut lines = vec![
         format!("Default: {:?}", config.default_action),
-        format!("Rules ({}):\n", config.rules.len()),
+        format!("Rules ({}, eval order):\n", merged.len()),
     ];
-    for (i, r) in config.rules.iter().enumerate() {
-        let lock_tag = if r.locked { " [LOCKED]" } else { "" };
-        lines.push(format!("  {}. [{:?}] {}{}", i + 1, r.action, r.name, lock_tag));
+    for (i, r) in merged.iter().enumerate() {
+        let source = if r.locked {
+            " [LOCKED]"
+        } else if user_names.contains(r.name.as_str()) {
+            " [USER]"
+        } else {
+            " [SYSTEM]"
+        };
+        lines.push(format!("  {}. [{:?}] {}{}", i + 1, r.action, r.name, source));
         if let Some(ref reason) = r.reason {
             lines.push(format!("     Reason: {reason}"));
         }
@@ -363,38 +392,49 @@ fn handle_add_rule(args: &serde_json::Map<String, Value>) -> String {
         }
     } else { None };
 
-    let mut config = load_policy_raw();
-    if config.rules.iter().any(|r| r.name == name) {
-        return format!("Rule '{name}' already exists. Remove it first.");
+    // Check name uniqueness across both system and user rules
+    let system_config = load_policy_raw();
+    let mut user_rules = load_rules_raw();
+    if system_config.rules.iter().any(|r| r.name == name) {
+        return format!("Rule '{name}' already exists in system policy. Use a different name or override it.");
+    }
+    if user_rules.iter().any(|r| r.name == name) {
+        return format!("Rule '{name}' already exists in user rules. Remove it first.");
     }
 
-    config.rules.push(PolicyRule {
+    user_rules.push(PolicyRule {
         name: name.into(), tool_pattern: tool_pattern.into(),
         conditions, action, reason: Some(reason.into()),
         alternative: None, locked: false,
         gate, ensure,
     });
-    save_policy(&config);
-    auto_sign_policy();
-    format!("Added rule '{name}' ({action:?}): {reason}")
+    save_rules(&user_rules);
+    auto_sign();
+    format!("Added rule '{name}' ({action:?}) to user rules: {reason}")
 }
 
 fn handle_remove_rule(args: &serde_json::Map<String, Value>) -> String {
     let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
-    let mut config = load_policy_raw();
-    if let Some(rule) = config.rules.iter().find(|r| r.name == name) {
+    // Check if it's a locked system rule
+    let system_config = load_policy_raw();
+    if let Some(rule) = system_config.rules.iter().find(|r| r.name == name) {
         if rule.locked {
             return format!("Cannot remove rule '{name}': rule is locked (self-protection).");
         }
+        if !rule.locked {
+            return format!("Cannot remove system rule '{name}'. Add an overriding rule in user rules instead.");
+        }
     }
-    let before = config.rules.len();
-    config.rules.retain(|r| r.name != name);
-    if config.rules.len() == before {
-        return format!("Rule '{name}' not found.");
+    // Remove from user rules
+    let mut user_rules = load_rules_raw();
+    let before = user_rules.len();
+    user_rules.retain(|r| r.name != name);
+    if user_rules.len() == before {
+        return format!("Rule '{name}' not found in user rules.");
     }
-    save_policy(&config);
-    auto_sign_policy();
-    format!("Removed rule '{name}'.")
+    save_rules(&user_rules);
+    auto_sign();
+    format!("Removed rule '{name}' from user rules.")
 }
 
 fn handle_set_limit(args: &serde_json::Map<String, Value>) -> String {
@@ -421,7 +461,7 @@ fn handle_set_limit(args: &serde_json::Map<String, Value>) -> String {
         gate: None, ensure: None,
     });
     save_policy(&config);
-    auto_sign_policy();
+    auto_sign();
     format!("Set ${max_amount:.0}/{per} limit on {category}.")
 }
 
@@ -524,76 +564,60 @@ fn handle_delete_credential(args: &serde_json::Map<String, Value>) -> String {
 
 fn handle_validate(args: &serde_json::Map<String, Value>) -> String {
     let fix = args.get("fix").and_then(|v| v.as_bool()).unwrap_or(false);
+    let mut lines = Vec::new();
+
+    // Validate system policy
+    lines.push("--- System policy ---".to_string());
     let path = policy_path();
     match crate::policy::load_policy_config(&path) {
         Ok(mut config) => {
             if fix {
                 let result = crate::policy::fix_policy(&mut config);
                 if result.rules_removed.is_empty() && result.rules_modified.is_empty() {
-                    return format!("No auto-fixable issues. Policy has {} rules.", config.rules.len());
-                }
-                save_policy(&config);
-                auto_sign_policy();
-
-                let mut lines = vec![format!("Policy fixed: {}", result.description)];
-                // Re-validate after fix
-                let remaining = crate::policy::validate_policy(&config);
-                let remaining_errors: Vec<_> = remaining.iter()
-                    .filter(|d| d.severity == crate::policy::DiagnosticSeverity::Error)
-                    .collect();
-                if remaining_errors.is_empty() {
-                    lines.push(format!("Policy now valid: {} rules.", config.rules.len()));
+                    lines.push(format!("No auto-fixable issues. {} rules.", config.rules.len()));
                 } else {
-                    lines.push(format!("{} error(s) remain (manual fix needed):", remaining_errors.len()));
-                    for e in &remaining_errors {
-                        lines.push(format!("  - [{}] {}", e.rule_name, e.error));
-                        lines.push(format!("    Fix: {}", e.fix_hint));
-                    }
+                    lines.push(format!("Fixed: {}", result.description));
+                    save_policy(&config);
+                    auto_sign();
                 }
-                return lines.join("\n");
             }
-
             let diagnostics = crate::policy::validate_policy(&config);
             if diagnostics.is_empty() {
-                format!("Policy valid: {} rules, no issues.", config.rules.len())
+                lines.push(format!("Valid: {} rules.", config.rules.len()));
             } else {
-                let errors: Vec<_> = diagnostics.iter()
-                    .filter(|d| d.severity == crate::policy::DiagnosticSeverity::Error)
-                    .collect();
-                let warnings: Vec<_> = diagnostics.iter()
-                    .filter(|d| d.severity == crate::policy::DiagnosticSeverity::Warning)
-                    .collect();
-                let mut lines = Vec::new();
-                if !errors.is_empty() {
-                    lines.push(format!("{} error(s):", errors.len()));
-                    for e in &errors {
-                        lines.push(format!("  - [{}] {}", e.rule_name, e.error));
-                        lines.push(format!("    Fix: {}", e.fix_hint));
-                        if e.auto_fixable {
-                            lines.push("    (auto-fixable: call signet_validate with fix=true)".into());
-                        }
-                    }
+                for d in &diagnostics {
+                    let sev = if d.severity == crate::policy::DiagnosticSeverity::Error { "ERROR" } else { "WARN" };
+                    lines.push(format!("  {sev} [{}]: {}", d.rule_name, d.error));
                 }
-                if !warnings.is_empty() {
-                    lines.push(format!("{} warning(s):", warnings.len()));
-                    for w in &warnings {
-                        lines.push(format!("  - [{}] {}", w.rule_name, w.error));
-                        lines.push(format!("    Fix: {}", w.fix_hint));
-                    }
-                }
-                lines.join("\n")
             }
         }
-        Err(e) => format!("Cannot load policy: {e}"),
+        Err(e) => lines.push(format!("Cannot load system policy: {e}")),
     }
+
+    // Validate user rules
+    let user_rules = load_rules_raw();
+    if !user_rules.is_empty() {
+        lines.push("\n--- User rules ---".to_string());
+        let user_config = PolicyConfig { version: 1, default_action: Decision::Allow, rules: user_rules };
+        let diagnostics = crate::policy::validate_policy(&user_config);
+        if diagnostics.is_empty() {
+            lines.push(format!("Valid: {} rules.", user_config.rules.len()));
+        } else {
+            for d in &diagnostics {
+                let sev = if d.severity == crate::policy::DiagnosticSeverity::Error { "ERROR" } else { "WARN" };
+                lines.push(format!("  {sev} [{}]: {}", d.rule_name, d.error));
+            }
+        }
+    }
+
+    lines.join("\n")
 }
 
 fn handle_test(args: &serde_json::Map<String, Value>) -> String {
     let tool_name = args.get("tool_name").and_then(|v| v.as_str()).unwrap_or("");
     let tool_input = args.get("tool_input").cloned().unwrap_or(serde_json::Value::Object(Default::default()));
 
-    let path = policy_path();
-    let policy = crate::policy::load_policy(&path);
+    let policy = crate::policy::load_merged_policy(&policy_path(), &rules_path());
     let v = vault::try_load_vault();
     let call = crate::policy::ToolCall {
         tool_name: tool_name.to_string(),
@@ -620,38 +644,48 @@ fn handle_reorder_rule(args: &serde_json::Map<String, Value>) -> String {
     let position = args.get("position").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
     if position == 0 { return "Position must be >= 1".into(); }
 
-    let mut config = load_policy_raw();
-    let idx = config.rules.iter().position(|r| r.name == name);
+    // Check if it's a system/locked rule
+    let system_config = load_policy_raw();
+    if system_config.rules.iter().any(|r| r.name == name && r.locked) {
+        return format!("Cannot reorder rule '{name}': rule is locked (self-protection).");
+    }
+    if system_config.rules.iter().any(|r| r.name == name) {
+        return format!("Cannot reorder system rule '{name}'. Only user rules can be reordered.");
+    }
+
+    // Reorder within user rules
+    let mut user_rules = load_rules_raw();
+    let idx = user_rules.iter().position(|r| r.name == name);
     match idx {
-        None => format!("Rule '{name}' not found."),
+        None => format!("Rule '{name}' not found in user rules."),
         Some(old_idx) => {
-            if config.rules[old_idx].locked {
-                return format!("Cannot reorder rule '{name}': rule is locked (self-protection).");
-            }
-            let rule = config.rules.remove(old_idx);
-            let new_idx = (position - 1).min(config.rules.len());
-            // Prevent placing unlocked rules before any locked rules
-            let first_unlocked = config.rules.iter().position(|r| !r.locked).unwrap_or(config.rules.len());
-            let safe_idx = new_idx.max(first_unlocked);
-            config.rules.insert(safe_idx, rule);
-            save_policy(&config);
-            auto_sign_policy();
-            let actual_pos = safe_idx + 1;
-            format!("Moved rule '{name}' to position {actual_pos}.")
+            let rule = user_rules.remove(old_idx);
+            let new_idx = (position - 1).min(user_rules.len());
+            user_rules.insert(new_idx, rule);
+            save_rules(&user_rules);
+            auto_sign();
+            format!("Moved user rule '{name}' to position {} (within user rules).", new_idx + 1)
         }
     }
 }
 
 fn handle_edit_rule(args: &serde_json::Map<String, Value>) -> String {
     let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
-    let mut config = load_policy_raw();
-    let rule = config.rules.iter_mut().find(|r| r.name == name);
+    // Check if it's a system/locked rule
+    let system_config = load_policy_raw();
+    if system_config.rules.iter().any(|r| r.name == name && r.locked) {
+        return format!("Cannot edit rule '{name}': rule is locked (self-protection).");
+    }
+    if system_config.rules.iter().any(|r| r.name == name) {
+        return format!("Cannot edit system rule '{name}'. Add an overriding user rule instead.");
+    }
+
+    // Edit in user rules
+    let mut user_rules = load_rules_raw();
+    let rule = user_rules.iter_mut().find(|r| r.name == name);
     match rule {
-        None => format!("Rule '{name}' not found."),
+        None => format!("Rule '{name}' not found in user rules."),
         Some(rule) => {
-            if rule.locked {
-                return format!("Cannot edit rule '{name}': rule is locked (self-protection).");
-            }
             let mut changes = Vec::new();
             if let Some(action_str) = args.get("action").and_then(|v| v.as_str()) {
                 match action_str.to_uppercase().as_str() {
@@ -694,9 +728,9 @@ fn handle_edit_rule(args: &serde_json::Map<String, Value>) -> String {
                 rule.ensure = Some(EnsureConfig { check, timeout, message });
                 changes.push("ensure");
             }
-            save_policy(&config);
-            auto_sign_policy();
-            format!("Updated rule '{name}': changed {}", changes.join(", "))
+            save_rules(&user_rules);
+            auto_sign();
+            format!("Updated user rule '{name}': changed {}", changes.join(", "))
         }
     }
 }
@@ -704,11 +738,18 @@ fn handle_edit_rule(args: &serde_json::Map<String, Value>) -> String {
 fn handle_sign_policy() -> String {
     match vault::try_load_vault() {
         Some(v) => {
-            let path = policy_path();
-            match vault::sign_policy(v.session_key(), &path) {
-                Ok(_) => "Policy signed. HMAC written.".into(),
-                Err(e) => format!("Error signing: {e}"),
+            let mut results = Vec::new();
+            match vault::sign_policy(v.session_key(), &policy_path()) {
+                Ok(_) => results.push("System policy signed.".to_string()),
+                Err(e) => results.push(format!("Error signing policy: {e}")),
             }
+            if rules_path().exists() {
+                match vault::sign_policy(v.session_key(), &rules_path()) {
+                    Ok(_) => results.push("User rules signed.".to_string()),
+                    Err(e) => results.push(format!("Error signing rules: {e}")),
+                }
+            }
+            results.join(" ")
         }
         None => "Vault not set up or locked (needed for signing key).".into(),
     }

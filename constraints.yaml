@@ -1,0 +1,382 @@
+# Constraints for signet-eval
+# C001-C013: Gate and Ensure actions (constrain interview + manual refinement)
+# C014-C019: CLI observability and auto-fix (2026-04-02)
+# C020-C027: Preflight session scoping (2026-04-03)
+
+- id: C001
+  boundary: Evaluation Determinism
+  condition: Gate and ensure actions produce the same result given the same inputs and system state.
+  violation: Non-deterministic evaluation leads to unpredictable allow/deny decisions.
+  severity: must
+  rationale: >
+    signet-eval's core guarantee is deterministic evaluation. Gate checks a static log.
+    Ensure runs a script whose output depends on system state, but given the same state,
+    the same script must produce the same result. No randomness, no network calls in the engine.
+  affected_components: [policy.rs]
+
+- id: C002
+  boundary: No Side Effects in Evaluation
+  condition: >
+    Policy evaluation (gate log query, ensure script execution) must not modify signet-eval
+    internal state. The ensure script may modify external system state (e.g., gh auth switch
+    via user interaction), but signet-eval's own data (policy, vault, ledger) remains untouched
+    during evaluation.
+  violation: Evaluation with side effects breaks the idempotency guarantee and could corrupt state.
+  severity: must
+  rationale: >
+    The current evaluate() function is pure. Gate adds a read-only query to the vault ledger.
+    Ensure spawns a subprocess but does not write to the vault or policy during evaluation.
+    The action is logged AFTER evaluation completes, in hook.rs, not in policy.rs.
+  affected_components: [policy.rs, hook.rs]
+
+- id: C003
+  boundary: Check Script Sandboxing
+  condition: >
+    Ensure scripts are resolved only from ~/.signet/checks/ by name. The script name must be
+    a simple filename: no slashes, no "..", no null bytes, no control characters, no unicode
+    normalization tricks. Path is constructed as: checks_dir.join(name), then canonicalized
+    and verified to still be inside checks_dir.
+  violation: Path traversal allows execution of arbitrary scripts outside the protected directory.
+  severity: must
+  rationale: >
+    The policy YAML is the attack surface. A rule with ensure.check="../../../tmp/evil" must
+    be caught at validation time (policy validate) and at runtime (evaluate). Defense in depth:
+    validate the name AND canonicalize the resolved path.
+  affected_components: [policy.rs]
+
+- id: C004
+  boundary: Check Script Timeout
+  condition: >
+    Ensure scripts execute with a hard timeout (default 5 seconds, configurable per-rule via
+    ensure.timeout field, max 30 seconds). On timeout, the subprocess is killed (SIGKILL after
+    SIGTERM grace period) and the rule evaluates to deny.
+  violation: A hung or malicious script blocks the hook indefinitely, making the AI agent unresponsive.
+  severity: must
+  rationale: >
+    Hook mode is synchronous -- Claude Code waits for the response. A script that hangs
+    (e.g., waiting for network, deadlocked) must not block indefinitely.
+    Note: legitimate scripts may need user input, so the timeout should be generous enough
+    for interactive prompts (10s recommended for interactive scripts).
+  affected_components: [policy.rs]
+
+- id: C005
+  boundary: Checks Directory Protection
+  condition: >
+    A locked self-protection rule protects ~/.signet/checks/ from AI agent modification.
+    This rule must be: (a) the highest priority locked rule (inserted before all other
+    self-protection rules), (b) enforced even during pause mode, (c) un-removable and
+    un-editable via MCP tools, (d) included in the hardcoded default_policy() fallback.
+  violation: Agent modifies check scripts to bypass ensure rules, defeating the enforcement mechanism.
+  severity: must
+  rationale: >
+    The ensure system's security depends on the integrity of check scripts. If the agent
+    can write to ~/.signet/checks/, it can replace a failing check with "exit 0" and bypass
+    any ensure rule. This is the same threat model as the existing self-protection rules.
+    Making it highest priority means it's checked before any other rule, including pause logic.
+  affected_components: [policy.rs, hook.rs, mcp_server.rs]
+
+- id: C006
+  boundary: Backward Compatibility
+  condition: >
+    Existing policies with allow/deny/ask rules continue to work unchanged. The new gate/ensure
+    fields are optional and only relevant when action is Gate or Ensure. Deserialization must
+    handle policies that don't have these fields. Serialization must skip them when not present.
+  violation: Upgrading signet-eval breaks existing policies.
+  severity: must
+  rationale: >
+    Users have existing policy.yaml files. The new Decision variants and struct fields must
+    be additive. serde skip_serializing_if ensures clean YAML output for existing rules.
+  affected_components: [policy.rs]
+
+- id: C007
+  boundary: Gate Log Query Scope
+  condition: >
+    Gate's "within" parameter specifies how many recent log entries to search (default 50,
+    max 500). The query checks the detail column of the ledger for a substring match of
+    requires_prior. Only entries with decision="allow" are considered (denied commands don't
+    count as "executed").
+  violation: Unbounded log scan degrades performance. Including denied entries gives false positives.
+  severity: should
+  rationale: >
+    The ledger can grow large over time. Bounding the scan prevents performance degradation.
+    Only allowed commands were actually executed, so denied entries should not satisfy the gate.
+  affected_components: [policy.rs, vault.rs]
+
+- id: C008
+  boundary: Gate Without Vault
+  condition: >
+    If no vault is available (user hasn't run signet-eval setup), gate rules evaluate to deny
+    with a clear message explaining that gate requires a vault for action log access.
+  violation: Gate silently allows when it can't check the log, defeating its purpose.
+  severity: must
+  rationale: Fail-closed. No vault means no log to check, so the prerequisite can't be verified.
+  affected_components: [policy.rs]
+
+- id: C009
+  boundary: Policy Validation for New Actions
+  condition: >
+    signet-eval validate must check: (a) gate action has gate config with requires_prior,
+    (b) ensure action has ensure config with check, (c) ensure.check is a valid simple
+    filename, (d) ensure.timeout if present is between 1 and 30, (e) gate.within if present
+    is between 1 and 500. Missing or invalid configs are validation errors.
+  violation: Invalid policies loaded at runtime cause panics or undefined behavior.
+  severity: must
+  rationale: Catch errors at validation time, not at evaluation time.
+  affected_components: [policy.rs]
+
+- id: C010
+  boundary: Ensure Script Stderr Capture
+  condition: >
+    When an ensure script fails (non-zero exit), signet-eval captures stderr (truncated to
+    500 bytes) and includes it in the deny reason alongside ensure.message. This gives the
+    agent actionable context about why the check failed.
+  violation: Agent receives a generic "check failed" with no guidance on what to fix.
+  severity: should
+  rationale: >
+    The script knows why it failed (e.g., "active user is jmc-wander but remote is jmcentire").
+    Relaying this to the agent helps it take corrective action voluntarily.
+  affected_components: [policy.rs, hook.rs]
+
+- id: C011
+  boundary: Git Remote Identity Matching
+  condition: >
+    The gh-identity-matches-remote check script must handle: (a) remote URL contains
+    "jmcentire" -> require jmcentire account, (b) remote URL contains "wandercom" ->
+    require jmc-wander account, (c) remote URL contains neither -> prompt user to choose,
+    (d) not inside a git repo (e.g., gh commands without a repo context) -> pass through
+    with a warning, (e) multiple remotes -> check the remote being targeted (default: origin).
+  violation: Wrong-account operations proceed unchecked.
+  severity: must
+  rationale: This is the motivating use case. The script must cover all realistic scenarios.
+  affected_components: [checks/gh-identity-matches-remote]
+
+- id: C012
+  boundary: MCP Tool Support
+  condition: >
+    signet_add_rule and signet_edit_rule must accept gate and ensure config fields.
+    signet_list_rules must display gate/ensure config when present. signet_condition_help
+    must document the new action types. MCP tools must not allow creating ensure rules
+    that reference scripts outside the checks directory.
+  violation: Users can't manage gate/ensure rules through the conversational MCP interface.
+  severity: should
+  rationale: >
+    The MCP server is the primary interface for policy management. It must support the
+    full lifecycle of gate/ensure rules.
+  affected_components: [mcp_server.rs]
+
+- id: C013
+  boundary: Documentation of Latency Impact
+  condition: >
+    Documentation and condition_help must clearly state that ensure scripts add latency
+    to hook evaluation. Recommend lightweight scripts (sub-second) for high-frequency
+    conditions. Suggest gate as the lighter-weight alternative when a log check suffices.
+  violation: Users add expensive ensure checks without understanding the performance impact.
+  severity: should
+  rationale: >
+    Ensure scripts can take up to 30 seconds. Users must understand the trade-off.
+    Gate is nearly free (SQLite query). Documentation should guide users toward the
+    appropriate action type.
+  affected_components: [documentation]
+
+# --- CLI Observability and Auto-Fix (2026-04-02) ---
+
+- id: C014
+  boundary: Validate Fix Idempotency
+  condition: >
+    Running `signet-eval validate --fix` twice in a row produces the same output.
+    The second run reports no changes. fix_policy() must be idempotent — applying
+    it to an already-fixed policy is a no-op.
+  violation: Repeated fix runs keep modifying the policy, creating spurious diffs.
+  severity: must
+  rationale: >
+    fix_policy() clamps numeric values and removes locked:false. Both operations
+    are idempotent by nature (clamping an already-clamped value is a no-op,
+    removing an already-absent field is a no-op). This constraint ensures that
+    property holds through the CLI surface.
+  affected_components: [main.rs, policy.rs]
+
+- id: C015
+  boundary: Validate Dry-Run No Side Effects
+  condition: >
+    `signet-eval validate --fix --dry-run` prints what would change but does NOT
+    modify the policy file on disk. The exit code reflects whether fixes are needed
+    (0 = valid/no fixes, 1 = errors exist, 0 = only fixable warnings shown).
+  violation: Dry-run unexpectedly mutates the policy file.
+  severity: must
+  rationale: >
+    Users need to preview auto-fix before committing. The dry-run flag must be
+    a pure read operation. This is the standard unix convention for --dry-run.
+  affected_components: [main.rs]
+
+- id: C016
+  boundary: Validate Fix Scope
+  condition: >
+    validate --fix only fixes mechanically safe issues: clamping out-of-range
+    numeric values (gate.within, ensure.timeout) and removing serialized
+    locked:false. It must NOT fix structural errors (missing gate/ensure config,
+    invalid regex, unknown condition functions). Those require human judgment.
+  violation: Auto-fix silently changes policy semantics beyond what the user intended.
+  severity: must
+  rationale: >
+    The existing fix_policy() already respects this boundary. The constraint
+    ensures no future expansion of --fix crosses into semantic territory.
+  affected_components: [policy.rs]
+
+- id: C017
+  boundary: Enable Clears All Enforcement Overrides
+  condition: >
+    `signet-eval enable` (no flags) clears the global disable file AND all
+    session disables in a single invocation. It reports what was cleared.
+    If nothing was disabled, it prints "Not currently disabled."
+  violation: User must run enable multiple times to fully restore enforcement.
+  severity: must
+  rationale: >
+    The current implementation checks global disable first, then falls through
+    to session disables. A user who has both (e.g., ran disable globally then
+    also per-session) must run enable twice. This violates principle of least
+    surprise.
+  affected_components: [main.rs]
+
+- id: C018
+  boundary: Status Shows Complete Enforcement State
+  condition: >
+    `signet-eval status` displays: (a) vault state (unlocked/locked/not set up),
+    (b) credential count, (c) session spend, (d) global pause state with expiry,
+    (e) per-rule and per-session pauses with expiry, (f) global disable state,
+    (g) per-session disables, (h) recent actions. Items (d)-(g) are the new
+    additions. If no overrides are active, these sections are omitted.
+  violation: User has no way to discover what's paused or disabled without inspecting .signet/ files.
+  severity: must
+  rationale: >
+    The pause/disable system is the primary way users temporarily relax policy.
+    Without visibility into active overrides, the user forgets what they've
+    suspended and loses trust in the tool. "I am powerless" — the user's words.
+  affected_components: [main.rs, vault.rs]
+
+- id: C019
+  boundary: Status Without Vault Still Shows Enforcement Overrides
+  condition: >
+    Even when no vault exists (user hasn't run setup), status still reports
+    pauses and disables, since those use file-based state independent of the
+    vault. The vault section says "not set up" but pause/disable sections
+    still appear.
+  violation: Users without a vault can't see their enforcement state at all.
+  severity: should
+  rationale: >
+    Pauses and disables work without a vault (they're file-based). Status
+    should report them regardless of vault state.
+
+# --- Preflight Session Scoping (2026-04-03) ---
+
+- id: C020
+  boundary: Session-scoped preflight isolation
+  condition: >
+    When SIGNET_SESSION is set, a preflight filed in one session must not affect
+    tool call evaluation in a different session. Each session sees only its own
+    preflights plus global (session_id=NULL) preflights.
+  violation: Preflight constraints leak across sessions, blocking unrelated work in concurrent instances.
+  severity: must
+  rationale: >
+    The motivating problem: a preflight filed for "refactor auth" in project A
+    blocks tool calls in project B. With multiple concurrent Claude Code sessions
+    (common when working on multiple repos), this makes preflight unusable.
+  affected_components: [vault.rs, hook.rs, mcp_server.rs]
+
+- id: C021
+  boundary: Backward compatibility when SIGNET_SESSION unset
+  condition: >
+    When SIGNET_SESSION is not set (empty or absent), all preflight behavior
+    is identical to the pre-session-scoping implementation. No behavioral
+    change for users who haven't configured session scoping.
+  violation: Upgrading signet-eval breaks preflight for existing users.
+  severity: must
+  rationale: >
+    SIGNET_SESSION is opt-in via ~/.profile. Users who don't configure it
+    must see zero change in behavior. This means: session_id=None preflights
+    are visible to all queries, deactivation works as before, etc.
+  affected_components: [vault.rs, hook.rs, mcp_server.rs]
+
+- id: C022
+  boundary: Global preflights visible to all sessions
+  condition: >
+    A preflight with session_id=NULL (filed when SIGNET_SESSION was unset)
+    is visible and enforced in ALL sessions, regardless of their SIGNET_SESSION
+    value. Global preflights are a superset of session-scoped ones.
+  violation: Global preflights become invisible to session-scoped instances.
+  severity: must
+  rationale: >
+    A user might file a global preflight ("never delete production data today")
+    before opening session-specific Claude instances. That global constraint
+    must still apply everywhere.
+  affected_components: [vault.rs, hook.rs]
+
+- id: C023
+  boundary: Session-scoped deactivation
+  condition: >
+    When filing a new preflight, only deactivate previous preflights with the
+    SAME session_id (or NULL). A session-scoped preflight must not deactivate
+    preflights from other sessions.
+  violation: Filing a preflight in session A silently deactivates session B's active preflight.
+  severity: must
+  rationale: >
+    The current code does "UPDATE preflights SET active=0 WHERE active=1"
+    which is session-unaware. With concurrent sessions, this wipes other
+    sessions' preflights.
+  affected_components: [vault.rs]
+
+- id: C024
+  boundary: HMAC covers session_id
+  condition: >
+    The session_id field is included in the serialized payload that gets
+    HMAC-signed. Changing the session_id of a stored preflight invalidates
+    the HMAC, causing it to be rejected.
+  violation: An attacker (or bug) could change a preflight's session scope after filing.
+  severity: must
+  rationale: >
+    session_id is part of the Preflight struct which is serialized to JSON
+    and HMAC'd. Since it's in the struct, serde includes it automatically.
+    This constraint verifies the property holds — no special code needed,
+    but the behavior must be tested.
+  affected_components: [vault.rs]
+
+- id: C025
+  boundary: DB schema migration is additive
+  condition: >
+    The session_id column is added via ALTER TABLE ... ADD COLUMN, not by
+    recreating the table. Existing rows get NULL for session_id (which
+    means "global scope" per C022). The migration is idempotent — running
+    it on a DB that already has the column is a no-op.
+  violation: Schema migration destroys existing preflight data or fails on re-run.
+  severity: must
+  rationale: >
+    Users have existing preflights in their vault. A destructive migration
+    would lose that history. ALTER TABLE ADD COLUMN is safe because SQLite
+    silently ignores it if the column already exists (via IF NOT EXISTS
+    pattern or catching the "duplicate column" error).
+  affected_components: [vault.rs]
+
+- id: C026
+  boundary: Vault protection rule
+  condition: >
+    A locked self-protection rule prevents AI agents from running
+    'signet-eval setup' or 'signet-eval unlock'. Vault passphrase
+    operations are reserved for humans only.
+  violation: AI agent sets vault passphrase, locking the human out of their own vault.
+  severity: must
+  rationale: >
+    An AI agent that sets the vault passphrase creates a lockout condition —
+    the human doesn't know the passphrase and can't unlock or reset the vault
+    without deleting vault.meta. This happened in practice.
+  affected_components: [policy.rs]
+
+- id: C027
+  boundary: No new dependencies
+  condition: >
+    Session scoping uses only existing dependencies (std::env, serde, rusqlite).
+    No new crate additions to Cargo.toml.
+  violation: Dependency bloat for a simple feature.
+  severity: must
+  rationale: >
+    Reading an environment variable and adding a column to SQLite requires
+    zero new dependencies. The existing stack is sufficient.
+  affected_components: [Cargo.toml]
