@@ -1,4 +1,4 @@
-//! Hook I/O — reads Claude Code PreToolUse JSON from stdin, returns decision on stdout.
+//! Hook I/O — reads agent hook JSON from stdin, returns an adapter-specific decision on stdout.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -13,11 +13,50 @@ use crate::vault::{Preflight, PreflightViolation, SoftConstraint, Vault};
 #[derive(Deserialize)]
 struct HookInput {
     tool_name: String,
+    #[serde(default)]
+    hook_event_name: Option<String>,
     #[serde(alias = "tool_input")]
     parameters: Option<Value>,
 }
 
-/// Claude Code expects hook responses wrapped in hookSpecificOutput.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HookAdapter {
+    Claude,
+    Codex,
+    CodexPermission,
+}
+
+impl HookAdapter {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s {
+            "claude" | "claude-code" => Ok(Self::Claude),
+            "codex" => Ok(Self::Codex),
+            "codex-permission" | "codex-permission-request" => Ok(Self::CodexPermission),
+            _ => Err(format!(
+                "unknown adapter '{s}' (expected claude, codex, or codex-permission)"
+            )),
+        }
+    }
+
+    fn event_name(self, input_event: Option<&str>) -> HookEvent {
+        match self {
+            Self::Claude => HookEvent::PreToolUse,
+            Self::CodexPermission => HookEvent::PermissionRequest,
+            Self::Codex => match input_event {
+                Some("PermissionRequest") => HookEvent::PermissionRequest,
+                _ => HookEvent::PreToolUse,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HookEvent {
+    PreToolUse,
+    PermissionRequest,
+}
+
+/// Claude Code and Codex PreToolUse expect hook responses wrapped in hookSpecificOutput.
 #[derive(Serialize)]
 struct HookResponse {
     #[serde(rename = "hookSpecificOutput")]
@@ -34,6 +73,26 @@ struct HookOutput {
     reason: Option<String>,
     #[serde(rename = "additionalContext", skip_serializing_if = "Option::is_none")]
     additional_context: Option<String>,
+}
+
+#[derive(Serialize)]
+struct CodexPermissionResponse {
+    #[serde(rename = "hookSpecificOutput")]
+    hook_specific_output: CodexPermissionOutput,
+}
+
+#[derive(Serialize)]
+struct CodexPermissionOutput {
+    #[serde(rename = "hookEventName")]
+    hook_event_name: String,
+    decision: CodexPermissionDecision,
+}
+
+#[derive(Serialize)]
+struct CodexPermissionDecision {
+    behavior: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
 }
 
 /// Evaluate a tool call against preflight soft constraints.
@@ -68,26 +127,31 @@ fn evaluate_preflight_constraint(
     None
 }
 
-pub fn run_hook(policy: &CompiledPolicy, vault: Option<&Vault>) -> i32 {
+pub fn run_hook_with_adapter(
+    policy: &CompiledPolicy,
+    vault: Option<&Vault>,
+    adapter: HookAdapter,
+) -> i32 {
     // Full disable — bypass everything silently (global or session-scoped)
     if crate::vault::is_disabled_file() || crate::vault::is_session_disabled() {
-        emit_allow();
+        emit_allow(adapter, HookEvent::PreToolUse);
         return 0;
     }
 
     let mut input = String::new();
     if io::stdin().read_to_string(&mut input).is_err() {
-        emit_deny("Failed to read stdin");
+        emit_deny(adapter, HookEvent::PreToolUse, "Failed to read stdin");
         return 0;
     }
 
     let hook_input: HookInput = match serde_json::from_str(&input) {
         Ok(h) => h,
         Err(_) => {
-            emit_deny("Malformed hook input");
+            emit_deny(adapter, HookEvent::PreToolUse, "Malformed hook input");
             return 0;
         }
     };
+    let event = adapter.event_name(hook_input.hook_event_name.as_deref());
 
     let call = ToolCall {
         tool_name: hook_input.tool_name.clone(),
@@ -100,19 +164,19 @@ pub fn run_hook(policy: &CompiledPolicy, vault: Option<&Vault>) -> i32 {
         let result = policy::evaluate(&call, policy, vault);
         if result.decision == Decision::Deny && result.matched_locked {
             // Self-protection: locked deny always enforced during pause
-            emit_decision("deny", result.reason, None);
+            emit_decision(adapter, event, "deny", result.reason, None);
             return 0;
         }
         if result.decision == Decision::Ensure && result.matched_locked {
             // Self-protection: locked ensure (e.g., identity guard) enforced during pause
             let resolved = resolve_ensure_result(result);
             if resolved.decision == Decision::Deny {
-                emit_decision("deny", resolved.reason, None);
+                emit_decision(adapter, event, "deny", resolved.reason, None);
                 return 0;
             }
         }
         // Not a locked rule — allow during pause
-        emit_decision("allow", None, None);
+        emit_decision(adapter, event, "allow", None, None);
         return 0;
     }
 
@@ -282,6 +346,8 @@ pub fn run_hook(policy: &CompiledPolicy, vault: Option<&Vault>) -> i32 {
     }
 
     emit_decision(
+        adapter,
+        event,
         final_decision.as_lowercase(),
         if final_decision != Decision::Allow { final_reason } else { None },
         final_context,
@@ -289,10 +355,58 @@ pub fn run_hook(policy: &CompiledPolicy, vault: Option<&Vault>) -> i32 {
     0
 }
 
-fn emit_decision(decision: &str, reason: Option<String>, additional_context: Option<String>) {
+fn emit_decision(
+    adapter: HookAdapter,
+    event: HookEvent,
+    decision: &str,
+    reason: Option<String>,
+    additional_context: Option<String>,
+) {
+    match (adapter, event) {
+        (HookAdapter::Claude, _) => {
+            emit_pre_tool_use_decision("PreToolUse", decision, reason, additional_context)
+        }
+        (HookAdapter::Codex | HookAdapter::CodexPermission, HookEvent::PreToolUse) => {
+            // Codex PreToolUse currently only supports deny as an enforcing decision.
+            // Allow/ask fail open in Codex, so emit no output for allow and turn ask into deny.
+            match decision {
+                "deny" => emit_pre_tool_use_decision("PreToolUse", "deny", reason, None),
+                "ask" => emit_pre_tool_use_decision(
+                    "PreToolUse",
+                    "deny",
+                    Some(reason.unwrap_or_else(|| {
+                        "Signet policy requires approval; Codex PreToolUse cannot ask yet.".into()
+                    })),
+                    None,
+                ),
+                _ => {}
+            }
+        }
+        (HookAdapter::Codex | HookAdapter::CodexPermission, HookEvent::PermissionRequest) => {
+            // PermissionRequest can explicitly allow/deny. For ASK, decline to decide so
+            // Codex shows its normal approval prompt.
+            match decision {
+                "allow" => emit_permission_request_decision("allow", None),
+                "deny" => emit_permission_request_decision(
+                    "deny",
+                    Some(reason.unwrap_or_else(|| "Blocked by Signet policy.".into())),
+                ),
+                "ask" => {}
+                _ => {}
+            }
+        }
+    }
+}
+
+fn emit_pre_tool_use_decision(
+    hook_event_name: &str,
+    decision: &str,
+    reason: Option<String>,
+    additional_context: Option<String>,
+) {
     let response = HookResponse {
         hook_specific_output: HookOutput {
-            hook_event_name: "PreToolUse".into(),
+            hook_event_name: hook_event_name.into(),
             permission_decision: decision.into(),
             reason,
             additional_context,
@@ -301,12 +415,25 @@ fn emit_decision(decision: &str, reason: Option<String>, additional_context: Opt
     println!("{}", serde_json::to_string(&response).unwrap());
 }
 
-fn emit_allow() {
-    emit_decision("allow", None, None);
+fn emit_permission_request_decision(behavior: &str, message: Option<String>) {
+    let response = CodexPermissionResponse {
+        hook_specific_output: CodexPermissionOutput {
+            hook_event_name: "PermissionRequest".into(),
+            decision: CodexPermissionDecision {
+                behavior: behavior.into(),
+                message,
+            },
+        },
+    };
+    println!("{}", serde_json::to_string(&response).unwrap());
 }
 
-fn emit_deny(reason: &str) {
-    emit_decision("deny", Some(reason.into()), None);
+fn emit_allow(adapter: HookAdapter, event: HookEvent) {
+    emit_decision(adapter, event, "allow", None, None);
+}
+
+fn emit_deny(adapter: HookAdapter, event: HookEvent, reason: &str) {
+    emit_decision(adapter, event, "deny", Some(reason.into()), None);
 }
 
 /// Run an ensure check script and return (passed, stderr_output).

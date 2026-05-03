@@ -23,6 +23,40 @@ cargo install signet-eval
 }
 ```
 
+For Codex, enable hooks in `~/.codex/config.toml` or `<repo>/.codex/config.toml`:
+
+```toml
+[features]
+codex_hooks = true
+```
+
+Then add `~/.codex/hooks.json` or `<repo>/.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "*",
+      "hooks": [{
+        "type": "command",
+        "command": "signet-eval --adapter codex",
+        "timeout": 30000,
+        "statusMessage": "Checking Signet policy"
+      }]
+    }],
+    "PermissionRequest": [{
+      "matcher": "*",
+      "hooks": [{
+        "type": "command",
+        "command": "signet-eval --adapter codex-permission",
+        "timeout": 30000,
+        "statusMessage": "Checking Signet approval policy"
+      }]
+    }]
+  }
+}
+```
+
 **2. Done.** Every tool call now passes through policy evaluation. The default policy blocks destructive operations, protects its own configuration, and allows everything else.
 
 **3. (Optional) Customize** — talk to Claude with the MCP server:
@@ -200,6 +234,8 @@ claude mcp add --scope user --transport stdio signet-proxy -- signet-eval proxy
 | Command | Purpose |
 |---------|---------|
 | `signet-eval` | Hook evaluation (default, 25ms) |
+| `signet-eval --adapter codex` | Codex `PreToolUse` hook evaluation |
+| `signet-eval --adapter codex-permission` | Codex `PermissionRequest` hook evaluation |
 | `signet-eval init` | Write default policy with locked self-protection rules |
 | `signet-eval rules` | Show current policy rules (locked rules tagged) |
 | `signet-eval validate` | Check policy for errors |
@@ -239,7 +275,7 @@ signet-eval is a **seatbelt, not a cage**. Understanding what it does and doesn'
 
 ### What it protects against
 
-**A cooperative agent making mistakes.** Claude Code follows the hook protocol — it calls signet-eval before every tool use and respects the allow/deny/ask response. Within that protocol, signet-eval reliably enforces policy:
+**A cooperative agent making mistakes.** Claude Code and Codex follow hook protocols — they call signet-eval around tool use and respect the supported responses. Within those protocols, signet-eval reliably enforces policy:
 
 - Blocks destructive commands (`rm`, `mkfs`, piped remote execution)
 - Enforces spending limits across tool calls
@@ -248,6 +284,8 @@ signet-eval is a **seatbelt, not a cage**. Understanding what it does and doesn'
 - Prevents casual policy tampering via locked rules and MCP guards
 
 This is the normal operating mode. The agent isn't trying to escape — it's trying to be helpful and the policy keeps it in bounds.
+
+Codex support has one important semantic difference: `PreToolUse` is currently deny-only for enforcement, so Signet `ALLOW` emits no output and Signet `ASK` is converted to a deny at that stage. The `PermissionRequest` adapter explicitly allows or denies requests Codex was already going to send through approval; Signet `ASK` defers to Codex's normal approval prompt.
 
 ### What it does NOT protect against
 

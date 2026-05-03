@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "signet-eval --adapter codex",
+            "timeout": 30000,
+            "statusMessage": "Checking Signet policy"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "signet-eval --adapter codex-permission",
+            "timeout": 30000,
+            "statusMessage": "Checking Signet approval policy"
+          }
+        ]
+      }
+    ]
+  }
+}

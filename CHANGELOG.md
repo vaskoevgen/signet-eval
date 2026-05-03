@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.10.0] - 2026-05-03
+
+### Added
+- Codex hook adapter support via `--adapter codex` and `--adapter codex-permission`.
+- Codex `PreToolUse` mapping: `DENY` emits Codex deny JSON, `ALLOW` emits no output, and `ASK` maps to deny because Codex does not yet enforce `ask` at `PreToolUse`.
+- Codex `PermissionRequest` mapping: explicit allow/deny decisions, with Signet `ASK` deferring to Codex's normal approval prompt.
+- Codex hook configuration example at `hooks/codex-hooks.json`.
+- Integration tests covering Codex `PreToolUse` and `PermissionRequest` response shapes.
+
+### Changed
+- CLI description and docs now describe signet-eval as agent-agnostic policy enforcement for Claude Code and Codex.
+
 ## [3.8.0] - 2026-04-02
 
 ### Added

@@ -11,6 +11,8 @@ cargo install --path .         # install to ~/.cargo/bin
 
 # Hook mode (default — reads stdin, writes stdout)
 echo '{"tool_name":"Bash","tool_input":{"command":"rm foo"}}' | signet-eval
+echo '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm foo"}}' | signet-eval --adapter codex
+echo '{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"rm foo"}}' | signet-eval --adapter codex-permission
 
 # CLI
 signet-eval init               # write system policy + sample.yaml (never touches rules.yaml)
@@ -38,7 +40,7 @@ src/
   main.rs          — CLI entry point (clap), 15 subcommands
   policy.rs        — Policy engine, 15 condition functions, first-match-wins, locked rules, self-protection
   vault.rs         — Encrypted vault (Argon2id + AES-256-GCM), 3-tier, spending ledger, scoped credentials
-  hook.rs          — PreToolUse hook I/O (stdin JSON → stdout JSON)
+  hook.rs          — Claude/Codex hook I/O adapters (stdin JSON → stdout JSON)
   mcp_server.rs    — MCP management server (17 tools, rmcp), locked-rule guards, auto-sign
   mcp_proxy.rs     — MCP proxy for upstream servers (rmcp), hot-reload policy
 tests/
@@ -83,7 +85,7 @@ Test modules:
 - `policy::self_protection_tests` — locked rules, self-protection coverage (13 tests)
 - `policy::goodhart_tests` — adversarial: unicode homoglyphs, null bytes, 1MB inputs, SQL injection, 1000-rule performance
 - `vault::tests` — crypto, credentials, spending, device key, HMAC, brute-force
-- `tests/integration_hook.rs` — subprocess e2e: hook I/O, self-protection, performance
+- `tests/integration_hook.rs` — subprocess e2e: Claude/Codex hook I/O, self-protection, performance
 - `tests/integration_cli.rs` — CLI subcommand tests
 
 ## Conventions
@@ -91,7 +93,7 @@ Test modules:
 - Rust 2021 edition, stable toolchain
 - No unsafe code
 - All errors handled — no unwrap() on user input paths
-- Exit code always 0 in hook mode (non-zero = hook failure in Claude Code)
+- Exit code always 0 in hook mode (non-zero = hook failure in Claude Code; Codex PreToolUse also accepts exit 2, but signet-eval uses JSON)
 - Policy evaluation deterministic and side-effect-free
 - `locked: false` is not serialized to YAML (skip_serializing_if)
 - Auto-sign after all MCP policy mutations

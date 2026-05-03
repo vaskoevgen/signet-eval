@@ -1,13 +1,20 @@
 //! Integration tests — run the actual binary as a subprocess and verify hook I/O.
 
-use std::process::{Command, Stdio};
 use std::io::Write;
+use std::process::{Command, Stdio};
 
 fn run_hook(input: &str) -> (String, i32) {
+    run_hook_with_args(input, &[])
+}
+
+fn run_hook_with_args(input: &str, extra_args: &[&str]) -> (String, i32) {
     // Use a nonexistent policy path to force built-in defaults
     // Isolate from user's pause/disable state via SIGNET_DIR
+    let mut args = vec!["--policy-path", "/tmp/__signet_test_nonexistent__.yaml"];
+    args.extend_from_slice(extra_args);
+
     let mut child = Command::new(env!("CARGO_BIN_EXE_signet-eval"))
-        .args(["--policy-path", "/tmp/__signet_test_nonexistent__.yaml"])
+        .args(args)
         .env("SIGNET_DIR", "/tmp/__signet_test_dir__")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -15,10 +22,23 @@ fn run_hook(input: &str) -> (String, i32) {
         .spawn()
         .expect("failed to start signet-eval");
 
-    child.stdin.as_mut().unwrap().write_all(input.as_bytes()).unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
     let output = child.wait_with_output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     (stdout, output.status.code().unwrap_or(-1))
+}
+
+fn hook_specific_output(output: &str) -> serde_json::Value {
+    serde_json::from_str::<serde_json::Value>(output)
+        .unwrap()
+        .get("hookSpecificOutput")
+        .unwrap()
+        .clone()
 }
 
 fn parse_decision(output: &str) -> &str {
@@ -127,6 +147,99 @@ fn test_hook_output_is_valid_json() {
             "Not valid JSON for input '{}': '{}'", input, trimmed
         );
     }
+}
+
+#[test]
+fn test_codex_pretooluse_allows_with_no_output() {
+    let (out, code) = run_hook_with_args(
+        r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls -la"}}"#,
+        &["--adapter", "codex"],
+    );
+    assert_eq!(code, 0);
+    assert_eq!(out, "");
+}
+
+#[test]
+fn test_codex_pretooluse_denies_with_codex_shape() {
+    let (out, code) = run_hook_with_args(
+        r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp"}}"#,
+        &["--adapter", "codex"],
+    );
+    assert_eq!(code, 0);
+
+    let output = hook_specific_output(&out);
+    assert_eq!(output["hookEventName"], "PreToolUse");
+    assert_eq!(output["permissionDecision"], "deny");
+    assert!(output["permissionDecisionReason"]
+        .as_str()
+        .unwrap()
+        .contains("File deletion blocked"));
+}
+
+#[test]
+fn test_codex_pretooluse_ask_maps_to_deny() {
+    let (out, code) = run_hook_with_args(
+        r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}"#,
+        &["--adapter", "codex"],
+    );
+    assert_eq!(code, 0);
+
+    let output = hook_specific_output(&out);
+    assert_eq!(output["hookEventName"], "PreToolUse");
+    assert_eq!(output["permissionDecision"], "deny");
+}
+
+#[test]
+fn test_codex_permission_allows_with_permission_shape() {
+    let (out, code) = run_hook_with_args(
+        r#"{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"ls -la"}}"#,
+        &["--adapter", "codex"],
+    );
+    assert_eq!(code, 0);
+
+    let output = hook_specific_output(&out);
+    assert_eq!(output["hookEventName"], "PermissionRequest");
+    assert_eq!(output["decision"]["behavior"], "allow");
+}
+
+#[test]
+fn test_codex_permission_denies_with_permission_shape() {
+    let (out, code) = run_hook_with_args(
+        r#"{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp"}}"#,
+        &["--adapter", "codex"],
+    );
+    assert_eq!(code, 0);
+
+    let output = hook_specific_output(&out);
+    assert_eq!(output["hookEventName"], "PermissionRequest");
+    assert_eq!(output["decision"]["behavior"], "deny");
+    assert!(output["decision"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("File deletion blocked"));
+}
+
+#[test]
+fn test_codex_permission_ask_defers_to_codex_prompt() {
+    let (out, code) = run_hook_with_args(
+        r#"{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}"#,
+        &["--adapter", "codex"],
+    );
+    assert_eq!(code, 0);
+    assert_eq!(out, "");
+}
+
+#[test]
+fn test_codex_permission_adapter_forces_permission_event() {
+    let (out, code) = run_hook_with_args(
+        r#"{"tool_name":"Bash","tool_input":{"command":"ls -la"}}"#,
+        &["--adapter", "codex-permission"],
+    );
+    assert_eq!(code, 0);
+
+    let output = hook_specific_output(&out);
+    assert_eq!(output["hookEventName"], "PermissionRequest");
+    assert_eq!(output["decision"]["behavior"], "allow");
 }
 
 // --- Self-protection integration tests ---

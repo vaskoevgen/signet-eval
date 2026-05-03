@@ -1,8 +1,8 @@
 [package]
 name = "signet-eval"
-version = "3.9.0"
+version = "3.10.0"
 edition = "2021"
-description = "Claude Code policy enforcement — deterministic authorization for AI agent tool calls"
+description = "Deterministic authorization for AI agent tool calls"
 license = "MIT"
 repository = "https://github.com/jmcentire/signet-eval"
 

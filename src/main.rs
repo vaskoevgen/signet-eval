@@ -11,7 +11,11 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "signet-eval", version, about = "Claude Code policy enforcement")]
+#[command(
+    name = "signet-eval",
+    version,
+    about = "Deterministic policy enforcement for AI agent tool calls"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -23,6 +27,10 @@ struct Cli {
     /// Path to user rules file
     #[arg(long, default_value = "~/.signet/rules.yaml")]
     rules_path: String,
+
+    /// Hook protocol adapter: claude, codex, or codex-permission
+    #[arg(long, default_value = "claude")]
+    adapter: String,
 }
 
 #[derive(Subcommand)]
@@ -133,6 +141,13 @@ fn run() -> i32 {
     let cli = Cli::parse();
     let policy_path = expand_home(&cli.policy_path);
     let rules_path = expand_home(&cli.rules_path);
+    let adapter = match hook::HookAdapter::parse(&cli.adapter) {
+        Ok(adapter) => adapter,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return 2;
+        }
+    };
 
     match cli.command {
         None | Some(Command::Eval) => {
@@ -144,17 +159,19 @@ fn run() -> i32 {
                 if !vault::verify_policy_integrity(vault.session_key(), &policy_path) {
                     eprintln!("WARNING: Policy integrity check failed. Using safe defaults.");
                     let compiled = policy::default_policy();
-                    return hook::run_hook(&compiled, Some(vault));
+                    return hook::run_hook_with_adapter(&compiled, Some(vault), adapter);
                 }
                 // Verify rules.yaml HMAC if the file exists
-                if rules_path.exists() && !vault::verify_policy_integrity(vault.session_key(), &rules_path) {
+                if rules_path.exists()
+                    && !vault::verify_policy_integrity(vault.session_key(), &rules_path)
+                {
                     eprintln!("WARNING: User rules integrity check failed. Using safe defaults.");
                     let compiled = policy::default_policy();
-                    return hook::run_hook(&compiled, Some(vault));
+                    return hook::run_hook_with_adapter(&compiled, Some(vault), adapter);
                 }
             }
             let compiled = policy::load_merged_policy(&policy_path, &rules_path);
-            hook::run_hook(&compiled, v.as_ref())
+            hook::run_hook_with_adapter(&compiled, v.as_ref(), adapter)
         }
         Some(Command::Init) => {
             let mut rules = policy::self_protection_rules();
