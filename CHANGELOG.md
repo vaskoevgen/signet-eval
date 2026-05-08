@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.10.1] - 2026-05-08
+
+### Fixed
+- `load_merged_policy` no longer drops user rules from `rules.yaml` when the system `policy.yaml` is missing or malformed. Previously this branch returned `default_policy()` and silently discarded every user rule, so on hosts without a per-host system policy both `signet_test` *and* real hook enforcement were no-op for user-installed rules. Missing/malformed system policy now falls back to the hardcoded baseline (self-protection + system defaults) and still merges user rules on top.
+- Three regression tests added covering missing system policy, missing system policy with self-protection preserved, and malformed system policy with user rules preserved.
+
+### Added
+- New locked default rule `prefer_persistent_task_store`: denies Anthropic's session-local `Task*` tool family (`TaskCreate` / `TaskUpdate` / `TaskList` / `TaskGet` / `TaskOutput` / `TaskStop`) and routes the agent to a persistent task store such as kindex's `mcp__kindex__task_*`. Ships locked so it cannot be silently overridden by an unlocking user rule.
+
 ## [3.10.0] - 2026-05-03
 
 ### Added

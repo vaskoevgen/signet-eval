@@ -490,14 +490,13 @@ pub fn load_policy(path: &Path) -> CompiledPolicy {
 /// Evaluation order: locked rules (from policy.yaml) → user rules (from rules.yaml) → unlocked system defaults (from policy.yaml).
 /// Falls back gracefully if rules.yaml doesn't exist.
 pub fn load_merged_policy(policy_path: &Path, rules_path: &Path) -> CompiledPolicy {
+    // System policy: missing file is benign (no per-host system rules installed) — fall back to
+    // the hardcoded baseline (self-protection + system defaults) and STILL load user rules.
+    // Malformed YAML also falls back to baseline rather than dropping user rules silently.
     let system_config = match std::fs::read_to_string(policy_path) {
-        Ok(content) => {
-            match serde_yaml::from_str::<PolicyConfig>(&content) {
-                Ok(config) => config,
-                Err(_) => return default_policy(),
-            }
-        }
-        Err(_) => return default_policy(),
+        Ok(content) => serde_yaml::from_str::<PolicyConfig>(&content)
+            .unwrap_or_else(|_| baseline_system_config()),
+        Err(_) => baseline_system_config(),
     };
 
     let user_rules = match std::fs::read_to_string(rules_path) {
@@ -949,6 +948,30 @@ pub fn self_protection_rules() -> Vec<PolicyRule> {
             alternative: Some("Use signet_preflight_active or signet_preflight_violations to read your preflight data.".into()),
             gate: None, ensure: None,
         },
+        // Routes Anthropic's session-local Task* tool family to a persistent task store.
+        // Locked because the user has elected to enforce this universally — the agent
+        // should not silently fall back to ephemeral Anthropic task tracking.
+        PolicyRule {
+            name: "prefer_persistent_task_store".into(),
+            tool_pattern: "Task*".into(),
+            conditions: vec!["true".into()],
+            action: Decision::Deny,
+            locked: true,
+            reason: Some(
+                "Anthropic's Task* tools (TaskCreate / TaskUpdate / TaskList / TaskGet / \
+                 TaskOutput / TaskStop) are session-local and disappear when the conversation ends. \
+                 A persistent task store should be used instead."
+                    .into(),
+            ),
+            alternative: Some(
+                "If kindex MCP is available, call mcp__kindex__task_add (with link_to to relate \
+                 the task to graph concepts), mcp__kindex__task_list, and mcp__kindex__task_done. \
+                 If no persistent task tool is available, do not silently fall back to Anthropic's \
+                 Task* — instead state plainly that you cannot persist tasks and ask the user."
+                    .into(),
+            ),
+            gate: None, ensure: None,
+        },
     ]
 }
 
@@ -1018,15 +1041,20 @@ pub fn system_default_rules() -> Vec<PolicyRule> {
     ]
 }
 
-pub fn default_policy() -> CompiledPolicy {
+/// Hardcoded baseline system policy: self-protection (locked) + system defaults (unlocked).
+/// Used both when no per-host policy.yaml exists and as the seed for `default_policy()`.
+pub fn baseline_system_config() -> PolicyConfig {
     let mut rules = self_protection_rules();
     rules.extend(system_default_rules());
-    let config = PolicyConfig {
+    PolicyConfig {
         version: 1,
         default_action: Decision::Allow,
         rules,
-    };
-    CompiledPolicy::from_config(&config)
+    }
+}
+
+pub fn default_policy() -> CompiledPolicy {
+    CompiledPolicy::from_config(&baseline_system_config())
 }
 
 /// Sample rules for ~/.signet/sample.yaml — opinionated examples users can copy to rules.yaml.
@@ -1595,10 +1623,11 @@ mod self_protection_tests {
     #[test]
     fn test_default_policy_has_locked_rules() {
         let rules = self_protection_rules();
-        assert_eq!(rules.len(), 8);
+        assert_eq!(rules.len(), 9);
         assert!(rules.iter().all(|r| r.locked));
         // github_identity_guard should NOT be in self-protection rules
         assert!(!rules.iter().any(|r| r.name == "github_identity_guard"));
+        assert!(rules.iter().any(|r| r.name == "prefer_persistent_task_store"));
     }
 
     #[test]
@@ -2546,6 +2575,134 @@ rules:
         assert_eq!(merged.rules[0].name, "locked");  // locked first
         assert_eq!(merged.rules[1].name, "my_rule");  // user second
         assert_eq!(merged.rules[2].name, "sys");       // system last
+    }
+
+    /// Regression: when policy.yaml does not exist, load_merged_policy must still load
+    /// user rules from rules.yaml and apply them. Previously this branch returned
+    /// default_policy() and silently dropped every user rule, making both signet_test
+    /// and real hook enforcement no-op for any host without a per-host system policy.
+    #[test]
+    fn test_load_merged_policy_missing_system_policy_loads_user_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let policy_path = dir.path().join("policy.yaml"); // intentionally not created
+        let rules_path = dir.path().join("rules.yaml");
+
+        // Use a tool name that no shipped locked default rule matches, so the
+        // assertion is genuinely testing user-rule survival rather than colliding
+        // with a baseline rule (e.g. prefer_persistent_task_store on Task*).
+        let user_rules = vec![
+            PolicyRule {
+                name: "user_deny_widget".into(),
+                tool_pattern: "WidgetTool".into(),
+                conditions: vec!["true".into()],
+                action: Decision::Deny,
+                reason: Some("user-installed deny".into()),
+                alternative: None,
+                locked: false,
+                gate: None,
+                ensure: None,
+            },
+        ];
+        std::fs::write(&rules_path, serde_yaml::to_string(&user_rules).unwrap()).unwrap();
+
+        assert!(!policy_path.exists(), "precondition: system policy must be missing");
+
+        let merged = load_merged_policy(&policy_path, &rules_path);
+
+        // User rule must be present in the merged set.
+        assert!(
+            merged.rules.iter().any(|r| r.name == "user_deny_widget"),
+            "user rule must survive missing system policy; got rules: {:?}",
+            merged.rules.iter().map(|r| &r.name).collect::<Vec<_>>()
+        );
+
+        // And it must actually match at evaluation time.
+        let call = make_call("WidgetTool", serde_json::json!({}));
+        let result = evaluate(&call, &merged, None);
+        assert_eq!(result.decision, Decision::Deny);
+        assert_eq!(result.matched_rule.as_deref(), Some("user_deny_widget"));
+    }
+
+    /// Missing system policy must still seed the baseline self-protection rules so
+    /// the engine isn't left without locked guards.
+    #[test]
+    fn test_load_merged_policy_missing_system_policy_keeps_self_protection() {
+        let dir = tempfile::tempdir().unwrap();
+        let policy_path = dir.path().join("policy.yaml");
+        let rules_path = dir.path().join("rules.yaml"); // also missing
+
+        let merged = load_merged_policy(&policy_path, &rules_path);
+
+        let baseline = baseline_system_config();
+        let locked: Vec<&str> = baseline.rules.iter().filter(|r| r.locked).map(|r| r.name.as_str()).collect();
+        assert!(!locked.is_empty(), "baseline must contain at least one locked rule");
+        for name in &locked {
+            assert!(
+                merged.rules.iter().any(|r| r.name == *name && r.locked),
+                "locked baseline rule '{name}' must be present after missing-policy fallback"
+            );
+        }
+    }
+
+    /// The shipped locked rule must deny every Task* harness tool by default and
+    /// must not catch unrelated tools (Bash, kindex's task tools).
+    #[test]
+    fn test_prefer_persistent_task_store_denies_anthropic_task_family() {
+        let policy = default_policy();
+
+        // Rule must be present, locked, and DENY.
+        let rule = policy.rules.iter().find(|r| r.name == "prefer_persistent_task_store")
+            .expect("prefer_persistent_task_store must be a baked-in default rule");
+        assert!(rule.locked, "prefer_persistent_task_store must be locked");
+        assert_eq!(rule.action, Decision::Deny);
+
+        // All Anthropic Task* variants must be denied.
+        for tool in &["TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "TaskOutput", "TaskStop", "TaskDelete"] {
+            let call = make_call(tool, serde_json::json!({}));
+            let result = evaluate(&call, &policy, None);
+            assert_eq!(result.decision, Decision::Deny, "{} must be denied by default policy", tool);
+            assert_eq!(result.matched_rule.as_deref(), Some("prefer_persistent_task_store"), "{} should match prefer_persistent_task_store", tool);
+        }
+
+        // Unrelated tools must NOT be matched by this rule.
+        let bash = make_call("Bash", serde_json::json!({"command": "echo hi"}));
+        let bash_result = evaluate(&bash, &policy, None);
+        assert_ne!(bash_result.matched_rule.as_deref(), Some("prefer_persistent_task_store"));
+
+        let kindex = make_call("mcp__kindex__task_add", serde_json::json!({"text": "x"}));
+        let kindex_result = evaluate(&kindex, &policy, None);
+        assert_ne!(kindex_result.matched_rule.as_deref(), Some("prefer_persistent_task_store"));
+    }
+
+    /// Malformed system policy.yaml must not silently drop user rules either.
+    #[test]
+    fn test_load_merged_policy_malformed_system_policy_loads_user_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let policy_path = dir.path().join("policy.yaml");
+        let rules_path = dir.path().join("rules.yaml");
+
+        std::fs::write(&policy_path, "this: is: not: valid: yaml: ::").unwrap();
+
+        let user_rules = vec![
+            PolicyRule {
+                name: "user_rule".into(),
+                tool_pattern: "Bash".into(),
+                conditions: vec![],
+                action: Decision::Ask,
+                reason: None,
+                alternative: None,
+                locked: false,
+                gate: None,
+                ensure: None,
+            },
+        ];
+        std::fs::write(&rules_path, serde_yaml::to_string(&user_rules).unwrap()).unwrap();
+
+        let merged = load_merged_policy(&policy_path, &rules_path);
+        assert!(
+            merged.rules.iter().any(|r| r.name == "user_rule"),
+            "user rule must survive malformed system policy"
+        );
     }
 
     #[test]
